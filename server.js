@@ -292,10 +292,15 @@ const server = http.createServer((req, res) => {
 // ---------- WebSockets ----------
 const wss = new WebSocketServer({ server, maxPayload: 1024 });
 
+// Render (y otros PaaS) ponen la app detrás de un proxy interno: remoteAddress deja
+// de ser la IP real del cliente y parece "local" para TODO el mundo, así que ahí
+// solo vale la clave secreta.
+const BEHIND_PROXY = !!process.env.RENDER;
+
 wss.on('connection', (ws, req) => {
   const addr = req.socket.remoteAddress || '';
   const reqUrl = new URL(req.url, 'http://x');
-  const localAddr = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(addr);
+  const localAddr = !BEHIND_PROXY && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(addr);
   const isHost = localAddr || reqUrl.searchParams.get('host') === HOST_KEY;
   const p = {
     id: nextId++, ws, name: '', joined: false, isHost,
