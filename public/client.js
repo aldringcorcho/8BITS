@@ -10,7 +10,7 @@ const W = canvas.width / SCALE, H = canvas.height / SCALE;
 const FONT = '"Press Start 2P", "Courier New", monospace';
 
 // URL pública del servidor WebSocket (Render/Railway/Fly...). Vacío = mismo origen (uso local con INICIAR.bat).
-const BACKEND_URL = ''; // ej: 'https://8bits-battle.onrender.com'
+const BACKEND_URL = 'https://eightbits-dj6n.onrender.com';
 
 let ws, myId = null, isHost = false, joined = false;
 let TILE = 16, maxShots = 10, maxHp = 3;
