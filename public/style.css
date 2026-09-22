@@ -1,0 +1,190 @@
+:root {
+  --bg: #000;
+  --panel: #1d2b53;
+  --line: #29adff;
+  --text: #fff1e8;
+  --dim: #83769c;
+  --accent: #ffec27;
+  --red: #ff004d;
+  --green: #00e436;
+  --font: 'Press Start 2P', 'Courier New', monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+[hidden] { display: none !important; }
+
+/* Efecto de monitor CRT */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px);
+  z-index: 50;
+}
+
+.screen { min-height: 100vh; padding: 16px; }
+
+#join {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(28px, 7vw, 56px);
+  line-height: 1.3;
+  color: var(--accent);
+  text-shadow: 4px 4px 0 var(--red), 8px 8px 0 #7e2553;
+}
+.title span { color: var(--line); }
+
+.blink { animation: blink 1s steps(1) infinite; color: var(--accent); }
+@keyframes blink { 50% { opacity: 0; } }
+
+.box {
+  background: var(--panel);
+  border: 4px solid var(--line);
+  box-shadow: 4px 4px 0 #000, inset 0 0 0 2px #000;
+  padding: 12px;
+}
+
+#joinForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(340px, 100%);
+}
+
+label, .lbl { color: var(--accent); font-size: 10px; }
+
+input {
+  font: inherit;
+  font-size: 16px;
+  padding: 10px;
+  background: #000;
+  color: var(--green);
+  border: 4px solid var(--dim);
+  outline: none;
+  text-transform: uppercase;
+  width: 100%;
+}
+input:focus { border-color: var(--green); }
+
+button {
+  font: inherit;
+  font-size: 12px;
+  padding: 12px 10px;
+  background: var(--red);
+  color: #fff;
+  border: none;
+  box-shadow: inset -4px -4px 0 #7e2553, 4px 4px 0 #000;
+  cursor: pointer;
+  width: 100%;
+}
+button:hover { filter: brightness(1.15); }
+button:active { transform: translate(2px, 2px); box-shadow: inset -4px -4px 0 #7e2553; }
+button:disabled { background: #5f574f; box-shadow: none; cursor: not-allowed; filter: none; }
+button.secondary { background: #065ab5; box-shadow: inset -4px -4px 0 #1d2b53, 4px 4px 0 #000; }
+
+.help { color: var(--dim); font-size: 10px; }
+.help p { margin: 6px 0; }
+.help b { color: var(--accent); }
+
+/* ---- Juego ---- */
+.layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.stage { flex: 1 1 600px; max-width: 1200px; }
+
+canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  border: 4px solid var(--line);
+  box-shadow: 6px 6px 0 #000;
+  background: #000;
+  cursor: crosshair;
+}
+
+.hud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin-top: 14px;
+  font-size: 14px;
+}
+.hp { color: var(--red); letter-spacing: 2px; }
+.ammo { color: var(--accent); letter-spacing: 1px; }
+
+.side {
+  flex: 0 1 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+.addr #addrList div {
+  color: var(--green);
+  font-size: 13px;
+  word-break: break-all;
+  margin-top: 6px;
+}
+
+#hostPanel { display: flex; flex-direction: column; gap: 10px; }
+#hostJoinForm { display: flex; gap: 8px; }
+#hostJoinForm input { font-size: 10px; padding: 8px; }
+#hostJoinForm button { width: auto; font-size: 10px; }
+
+ul { list-style: none; margin: 8px 0 0; padding: 0; font-size: 10px; }
+#playerList li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 2px dashed #000;
+}
+#playerList li.dead { opacity: .4; text-decoration: line-through; }
+#playerList li.me .pname::after { content: ' ◄'; color: var(--accent); }
+.dot { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; }
+
+#feed li { padding: 3px 0; color: var(--dim); }
+#feed li b { color: var(--text); font-weight: normal; }
+
+.tiny { font-size: 8px; color: var(--dim); text-align: center; }
+
+.offline {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  text-align: center;
+  padding: 16px;
+}

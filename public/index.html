@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>8 BITS BATTLE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Pantalla de entrada (alumnos) -->
+  <section id="join" class="screen" hidden>
+    <h1 class="title">8 BITS<br><span>BATTLE</span></h1>
+    <p class="blink">¡SOLO PUEDE QUEDAR UNO!</p>
+    <form id="joinForm" class="box">
+      <label for="nameInput">TU NOMBRE</label>
+      <input id="nameInput" maxlength="12" autocomplete="off" spellcheck="false" placeholder="JUGADOR" required>
+      <button type="submit">¡A LUCHAR!</button>
+    </form>
+    <div class="help">
+      <p>MOVER: WASD / FLECHAS</p>
+      <p>APUNTAR: RATÓN</p>
+      <p>DISPARAR: CLIC / ESPACIO</p>
+      <p>SOLO TIENES <b id="helpShots">10</b> TIROS. ¡NO LOS MALGASTES!</p>
+    </div>
+  </section>
+
+  <!-- Pantalla de juego -->
+  <section id="game" class="screen" hidden>
+    <div class="layout">
+      <div class="stage">
+        <canvas id="canvas" width="960" height="640"></canvas>
+        <div class="hud">
+          <div><span class="lbl">VIDA</span> <span id="hudHp" class="hp"></span></div>
+          <div><span class="lbl">TIROS</span> <span id="hudAmmo" class="ammo"></span> <span id="hudAmmoNum"></span></div>
+          <div><span class="lbl">BAJAS</span> <span id="hudKills">0</span></div>
+        </div>
+      </div>
+
+      <aside class="side">
+        <div class="box addr">
+          <div class="lbl">CONÉCTATE EN</div>
+          <div id="addrList"></div>
+        </div>
+
+        <div id="hostPanel" class="box" hidden>
+          <div class="lbl">PANEL DEL PROFESOR</div>
+          <button id="btnStart">EMPEZAR PARTIDA</button>
+          <button id="btnStop" class="secondary">TERMINAR PARTIDA</button>
+          <form id="hostJoinForm">
+            <input id="hostName" maxlength="12" placeholder="JUGAR TAMBIÉN" autocomplete="off">
+            <button type="submit" class="secondary">UNIRME</button>
+          </form>
+        </div>
+
+        <div class="box">
+          <div class="lbl">JUGADORES <span id="aliveCount"></span></div>
+          <ul id="playerList"></ul>
+        </div>
+
+        <div class="box">
+          <div class="lbl">BAJAS</div>
+          <ul id="feed"></ul>
+        </div>
+
+        <div class="tiny">M: SONIDO ON/OFF</div>
+      </aside>
+    </div>
+  </section>
+
+  <div id="offline" class="offline" hidden>
+    <p>SIN CONEXIÓN CON EL SERVIDOR</p>
+    <p class="blink">REINTENTANDO...</p>
+  </div>
+
+  <script src="client.js"></script>
+</body>
+</html>
