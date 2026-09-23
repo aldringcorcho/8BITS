@@ -1,22 +1,29 @@
-# 8 BITS BATTLE
+# 8 BITS BATTLE — Carrera vertical
 
-Juego de 8 bits para el aula en el que todos luchan contra todos y solo puede quedar uno. El equipo del profesor hace de servidor y los alumnos se conectan por WebSockets desde el navegador.
+Juego de 8 bits para el aula: hasta **20 alumnos** compiten por escalar una torre saltando de plataforma en plataforma. **Gana el primero que llegue a la cima.** La lava sube desde abajo y elimina a quien se queda atrás.
 
-## Arrancar (equipo del profesor)
-1. Doble clic en `INICIAR.bat` (o ejecuta `npm install` y después `npm start`).
-2. Se abre `http://localhost:3000`: es el **panel del profesor**. Tu IP sale arriba a la derecha.
-3. Los alumnos abren en su navegador `http://TU_IP:3000`, escriben su nombre y pulsan **¡A LUCHAR!**
-4. Cuando estén todos, pulsa **EMPEZAR PARTIDA**.
+## Dónde está desplegado
+- **Frontend (Vercel)**: https://bits-ashen.vercel.app
+- **Backend WebSocket (Render)**: https://eightbits-dj6n.onrender.com
 
-La primera vez, Windows pedirá permiso en el firewall para Node.js: marca **Redes privadas** y acepta.
+Cada `git push` a `main` redespliega ambos automáticamente.
+
+## Cómo se juega
+1. El **profesor** abre `https://bits-ashen.vercel.app/?host=TU_CLAVE` (la clave es la variable `HOST_KEY` configurada en Render). Verá el panel del profesor.
+2. Los **alumnos** abren `https://bits-ashen.vercel.app` desde cualquier red, escriben su nombre y pulsan **¡A LUCHAR!**
+3. Cuando estén todos, el profesor pulsa **EMPEZAR PARTIDA**.
 
 ## Reglas
-- 3 vidas y **10 tiros como máximo** por partida.
-- A los 25 s la zona roja empieza a cerrarse, y fuera de ella pierdes vida. Así la partida siempre termina, aunque todos se queden sin balas.
-- Gana el último que siga vivo. Luego se vuelve a la sala para jugar otra partida.
-
-## Controles
-WASD/flechas para moverte · ratón para apuntar · clic o espacio para disparar · M para el sonido
+- **Mover**: A / D o flechas. **Saltar**: W, flecha arriba o espacio.
+- Plataformas **naranjas** se rompen al pisarlas, las **azules** se mueven y los **pinchos** te devuelven al último checkpoint.
+- Las plataformas **verdes de ancho completo** son checkpoints: si caes, reapareces en el último que tocaste.
+- A los 30 s empieza a subir la **lava**, acelerando poco a poco. Si te alcanza (o si se traga tu checkpoint), quedas eliminado.
+- Gana quien llegue arriba del todo; si la lava elimina a todos menos a uno, gana el superviviente.
 
 ## Ajustes
-Están al principio de `server.js`: `MAX_SHOTS`, `MAX_HP`, `SPEED`, `ZONE_DELAY`, `PORT` y el mapa (`MAP`).
+Están al principio de `server.js`: `NUM_ROWS` (altura de la torre), `CHECKPOINT_EVERY`, `LAVA_DELAY`, `LAVA_SPEED`, `LAVA_ACCEL`, `MAX_PLAYERS`, y la física (`GRAVITY`, `JUMP_VY`, `MAX_VX`).
+
+La clave del profesor se cambia en Render → Settings → Environment → `HOST_KEY`.
+
+## Jugar en local (sin internet)
+Doble clic en `INICIAR.bat` (o `npm install` y `npm start`) y abre `http://localhost:3000`. En local el cliente se conecta al servidor de tu equipo y quien abre desde `localhost` es automáticamente el profesor.

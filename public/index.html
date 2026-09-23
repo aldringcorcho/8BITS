@@ -13,17 +13,17 @@
   <!-- Pantalla de entrada (alumnos) -->
   <section id="join" class="screen" hidden>
     <h1 class="title">8 BITS<br><span>BATTLE</span></h1>
-    <p class="blink">¡SOLO PUEDE QUEDAR UNO!</p>
+    <p class="blink">¡EL PRIMERO EN LLEGAR A LA CIMA GANA!</p>
     <form id="joinForm" class="box">
       <label for="nameInput">TU NOMBRE</label>
       <input id="nameInput" maxlength="12" autocomplete="off" spellcheck="false" placeholder="JUGADOR" required>
       <button type="submit">¡A LUCHAR!</button>
     </form>
     <div class="help">
-      <p>MOVER: WASD / FLECHAS</p>
-      <p>APUNTAR: RATÓN</p>
-      <p>DISPARAR: CLIC / ESPACIO</p>
-      <p>SOLO TIENES <b id="helpShots">10</b> TIROS. ¡NO LOS MALGASTES!</p>
+      <p>MOVER: A / D · FLECHAS</p>
+      <p>SALTAR: W · FLECHA ARRIBA · ESPACIO</p>
+      <p>CUIDADO: HAY PLATAFORMAS QUE SE <b>ROMPEN</b>, OTRAS SE <b>MUEVEN</b> Y HAY <b>PINCHOS</b></p>
+      <p>SI CAES VUELVES AL ÚLTIMO <b>CHECKPOINT</b>. ¡Y LA <b>LAVA</b> SUBE!</p>
     </div>
   </section>
 
@@ -33,18 +33,13 @@
       <div class="stage">
         <canvas id="canvas" width="960" height="640"></canvas>
         <div class="hud">
-          <div><span class="lbl">VIDA</span> <span id="hudHp" class="hp"></span></div>
-          <div><span class="lbl">TIROS</span> <span id="hudAmmo" class="ammo"></span> <span id="hudAmmoNum"></span></div>
-          <div><span class="lbl">BAJAS</span> <span id="hudKills">0</span></div>
+          <div><span class="lbl">ALTURA</span> <span id="hudPct" class="pct">-</span></div>
+          <div><span class="lbl">CHECKPOINT</span> <span id="hudCp">-</span></div>
+          <div><span id="hudStatus" class="status"></span></div>
         </div>
       </div>
 
       <aside class="side">
-        <div class="box addr">
-          <div class="lbl">CONÉCTATE EN</div>
-          <div id="addrList"></div>
-        </div>
-
         <div id="hostPanel" class="box" hidden>
           <div class="lbl">PANEL DEL PROFESOR</div>
           <button id="btnStart">EMPEZAR PARTIDA</button>
@@ -56,16 +51,16 @@
         </div>
 
         <div class="box">
-          <div class="lbl">JUGADORES <span id="aliveCount"></span></div>
+          <div class="lbl">CLASIFICACIÓN <span id="aliveCount"></span></div>
           <ul id="playerList"></ul>
         </div>
 
         <div class="box">
-          <div class="lbl">BAJAS</div>
+          <div class="lbl">ÚLTIMO EN LA TORRE</div>
           <ul id="feed"></ul>
         </div>
 
-        <div class="tiny">M: SONIDO ON/OFF</div>
+        <div class="tiny">A/D MOVER · W SALTAR · M SONIDO</div>
       </aside>
     </div>
   </section>
