@@ -24,9 +24,10 @@ const NUM_ROWS = 80;                 // filas a escalar
 const GROUND_Y = NUM_ROWS * ROW_H;   // suelo (salida)
 const FINISH_Y = 0;                  // cima (meta)
 const PLAYER_R = 5;                  // caja de colisión (coincide con el sprite 10x10)
-const MAX_JUMP_DX = 90;             // desplazamiento horizontal máx. garantizado entre filas
 
 // ---------- Física ----------
+// Con estos valores un salto recorre ~94 px en horizontal al subir una fila y
+// alcanza ~105 px de altura: las pistas se generan dentro de ese margen.
 const GRAVITY = 0.6;
 const JUMP_VY = -11.5;
 const MOVE_ACCEL = 0.7;
@@ -34,50 +35,58 @@ const MAX_VX = 3.0;
 const FRICTION = 0.85;
 const FALL_LOSE = ROW_H * 1.5;       // caer más de fila y media por debajo de la última plataforma = eliminado
 const RESPAWN_INVULN = 800;          // ms de invulnerabilidad tras reaparecer
+// Ayudas de control (compensan la latencia de red): el salto se recuerda unos
+// ticks si se pulsa justo antes de aterrizar, y se puede saltar unos ticks
+// después de haber salido del borde de una plataforma.
+const JUMP_BUFFER_TICKS = 6;
+const COYOTE_TICKS = 5;
 
 // ---------- Flechas (salen de los lados) ----------
 const ARROW_SPEED = 4;               // px por tick
-const ARROW_KNOCK_VX = 6;            // empujón horizontal al recibir una flecha
-const ARROW_KNOCK_VY = -4;
-const ARROW_KNOCK_TICKS = 12;        // ticks sin control tras el impacto
 
 // ---------- Pistas (se eligen por votación en la sala de espera) ----------
 const TRACKS = {
   easy: {
     name: 'FÁCIL',
     checkpointEvery: 10,             // una plataforma segura de ancho completo cada N filas
-    mainW: [32, 20],                 // ancho de la plataforma del camino: mínimo + aleatorio
-    mainPool: ['normal', 'normal', 'move', 'move', 'break', 'break'],
-    afterBreakPool: ['normal', 'normal', 'break'],
-    moveAmp: [22, 24], moveFreq: [0.002, 0.002],
-    extraChance: 0.8, secondExtraChance: 0.45, thirdExtraChance: 0,
-    extraPool: ['normal', 'move', 'break', 'spike', 'spike'],
-    breakDelay: 280,                 // ms hasta que una plataforma "break" se desmorona
-    arrowStart: 3000,                // ms tras "¡YA!" antes de la primera flecha
-    arrowEveryMax: 1600,             // ms entre flechas al principio...
-    arrowEveryMin: 650,              // ...y al final (cada vez más seguidas)
-    arrowWarn: 700,                  // ms de aviso "!" en el borde antes de disparar
-    lavaDelay: 4000,                 // la lava empieza a subir 4s después de "¡YA!"
-    lavaSpeed: 16,                   // px/s
-    lavaAccel: 0.2,                  // px/s² (para que la partida siempre acabe)
+    jumpDx: 60,                      // desplazamiento horizontal máx. entre plataformas del camino
+    mainW: [44, 22],                 // ancho de la plataforma del camino: mínimo + aleatorio
+    mainPool: ['normal', 'normal', 'normal', 'move', 'break'],
+    afterBreakPool: ['normal'],      // nunca dos plataformas que se rompen seguidas
+    moveAmp: [14, 18], moveFreq: [0.0015, 0.001],
+    extraChance: 0.75, secondExtraChance: 0.35, thirdExtraChance: 0,
+    extraPool: ['normal', 'normal', 'move', 'break', 'spike'],
+    spikeMargin: 28,                 // distancia mínima de un pincho al camino (px)
+    breakDelay: 550,                 // ms hasta que una plataforma "break" se desmorona
+    arrowStart: 6000,                // ms tras "¡YA!" antes de la primera flecha
+    arrowEveryMax: 2600,             // ms entre flechas al principio...
+    arrowEveryMin: 1300,             // ...y al final (cada vez más seguidas)
+    arrowWarn: 900,                  // ms de aviso "!" en el borde antes de disparar
+    knockVx: 3.5, knockVy: -3, knockTicks: 7,   // empujón de una flecha
+    lavaDelay: 8000,                 // la lava empieza a subir 8s después de "¡YA!"
+    lavaSpeed: 10,                   // px/s
+    lavaAccel: 0.12,                 // px/s² (para que la partida siempre acabe)
   },
   hard: {
     name: 'DIFÍCIL',
-    checkpointEvery: 16,
-    mainW: [26, 14],
-    mainPool: ['normal', 'move', 'move', 'break', 'break', 'break'],
-    afterBreakPool: ['normal', 'break', 'break'],
-    moveAmp: [24, 28], moveFreq: [0.0025, 0.0025],
-    extraChance: 1, secondExtraChance: 0.7, thirdExtraChance: 0.4,
-    extraPool: ['normal', 'move', 'break', 'spike', 'spike', 'spike'],
-    breakDelay: 200,
-    arrowStart: 2000,
-    arrowEveryMax: 900,
-    arrowEveryMin: 350,
-    arrowWarn: 550,
-    lavaDelay: 3000,
-    lavaSpeed: 18,
-    lavaAccel: 0.25,
+    checkpointEvery: 14,
+    jumpDx: 82,
+    mainW: [30, 14],
+    mainPool: ['normal', 'normal', 'move', 'move', 'break', 'break'],
+    afterBreakPool: ['normal', 'normal', 'break'],
+    moveAmp: [20, 22], moveFreq: [0.002, 0.0015],
+    extraChance: 1, secondExtraChance: 0.6, thirdExtraChance: 0.3,
+    extraPool: ['normal', 'move', 'break', 'spike', 'spike'],
+    spikeMargin: 12,
+    breakDelay: 380,
+    arrowStart: 4000,
+    arrowEveryMax: 1500,
+    arrowEveryMin: 700,
+    arrowWarn: 700,
+    knockVx: 5, knockVy: -3.5, knockTicks: 10,
+    lavaDelay: 5000,
+    lavaSpeed: 13,
+    lavaAccel: 0.17,
   },
 };
 
@@ -137,13 +146,24 @@ function buildLevel(seed, track) {
 
     // Plataforma principal: garantiza que siempre hay un camino posible
     const w = between(cfg.mainW);
-    cursorX += (rnd() * 2 - 1) * MAX_JUMP_DX;
-    cursorX = Math.max(w / 2 + 8, Math.min(WORLD_W - w / 2 - 8, cursorX));
     // Tras una "break" no hay tiempo de esperar a que una "move" se acerque: evitamos esa combinación imposible
     const mainType = pick(rnd, prevMainType === 'break' ? cfg.afterBreakPool : cfg.mainPool);
+    const amp = mainType === 'move' ? between(cfg.moveAmp) : 0;
+    // Desde una "break" hay poco tiempo para colocarse: la siguiente queda más cerca
+    const dx = prevMainType === 'break' ? Math.min(cfg.jumpDx, 55) : cfg.jumpDx;
+    cursorX += (rnd() * 2 - 1) * dx;
+    // Una plataforma móvil debe quedar dentro de la pantalla en todo su recorrido,
+    // con margen para que no empuje al jugador contra la pared
+    const wall = mainType === 'move' ? 24 : 8;
+    cursorX = Math.max(w / 2 + amp + wall, Math.min(WORLD_W - w / 2 - amp - wall, cursorX));
     add(cursorX - w / 2, y, w, mainType,
-      mainType === 'move' ? { baseX: cursorX - w / 2, amp: between(cfg.moveAmp), freq: between(cfg.moveFreq), phase: rnd() * Math.PI * 2 } : {});
+      mainType === 'move' ? { baseX: cursorX - w / 2, amp, freq: between(cfg.moveFreq), phase: rnd() * Math.PI * 2 } : {});
     prevMainType = mainType;
+
+    // Zona del camino en esta fila (incluye el recorrido si se mueve): las
+    // plataformas extra nunca la invaden, y los pinchos guardan más distancia.
+    const pathL = cursorX - w / 2 - amp, pathR = cursorX + w / 2 + amp;
+    const taken = [];
 
     // Plataformas extra (hasta 3): variedad y trampas, nunca son el único camino
     let extras = 0;
@@ -151,12 +171,21 @@ function buildLevel(seed, track) {
     if (extras && rnd() < cfg.secondExtraChance) extras++;
     if (extras === 2 && rnd() < cfg.thirdExtraChance) extras++;
     for (let k = 0; k < extras; k++) {
-      const ew = 30 + rnd() * 24;
-      let ex = rnd() * (WORLD_W - ew);
-      if (Math.abs((ex + ew / 2) - cursorX) < (ew + w) / 2 + 6) ex = (ex + WORLD_W / 2) % (WORLD_W - ew);
       const extraType = pick(rnd, cfg.extraPool);
-      add(ex, y, ew, extraType,
-        extraType === 'move' ? { baseX: ex, amp: between(cfg.moveAmp) - 6, freq: between(cfg.moveFreq), phase: rnd() * Math.PI * 2 } : {});
+      const ew = extraType === 'spike' ? 22 + rnd() * 18 : 30 + rnd() * 24;
+      const eamp = extraType === 'move' ? between(cfg.moveAmp) * 0.7 : 0;
+      const margin = extraType === 'spike' ? cfg.spikeMargin : 6;
+      // Hasta 6 intentos de encontrar un hueco libre; si no hay, se omite
+      for (let tries = 0; tries < 6; tries++) {
+        const ex = eamp + rnd() * (WORLD_W - ew - 2 * eamp);
+        const l = ex - eamp, r = ex + ew + eamp;
+        if (r + margin > pathL && l - margin < pathR) continue;
+        if (taken.some(([tl, tr]) => r + 4 > tl && l - 4 < tr)) continue;
+        taken.push([l, r]);
+        add(ex, y, ew, extraType,
+          extraType === 'move' ? { baseX: ex, amp: eamp, freq: between(cfg.moveFreq), phase: rnd() * Math.PI * 2 } : {});
+        break;
+      }
     }
   }
 
@@ -273,7 +302,7 @@ function startCountdown() {
       vx: 0, vy: 0, grounded: true, standingOn: null,
       alive: true, inGame: true, finished: false,
       checkpoint: { x: WORLD_W / 2, y: GROUND_Y, row: 0, idx: 0 },
-      lastGroundY: GROUND_Y, knock: 0, deathBy: null,
+      lastGroundY: GROUND_Y, knock: 0, jumpBuf: 0, coyote: 0,
       invulnUntil: 0, input: { l: false, r: false, jump: false }, prevJump: false,
     });
   });
@@ -333,24 +362,33 @@ function update() {
       p.vx = Math.max(-MAX_VX, Math.min(MAX_VX, p.vx));
     }
 
-    if (p.input.jump && !p.prevJump && p.grounded) {
+    // Salto con "buffer" (se recuerda la pulsación unos ticks) y "coyote time"
+    // (se puede saltar poco después de salir del borde)
+    if (p.input.jump && !p.prevJump) p.jumpBuf = JUMP_BUFFER_TICKS;
+    p.prevJump = p.input.jump;
+    if (p.grounded) p.coyote = COYOTE_TICKS;
+    if (p.jumpBuf > 0 && p.coyote > 0 && p.vy >= 0) {
       p.vy = JUMP_VY;
       p.grounded = false;
+      p.jumpBuf = 0;
+      p.coyote = 0;
     }
-    p.prevJump = p.input.jump;
+    if (p.jumpBuf > 0) p.jumpBuf--;
+    if (!p.grounded && p.coyote > 0) p.coyote--;
 
     const prevPlat = p.standingOn != null ? level.byId.get(p.standingOn) : null;
-    const prevPlatX = prevPlat && prevPlat.type === 'move' ? movingX(prevPlat, elapsed) : null;
 
     p.vy += GRAVITY;
     const prevY = p.y;
     p.x += p.vx;
     p.y += p.vy;
-    p.x = Math.max(PLAYER_R, Math.min(WORLD_W - PLAYER_R, p.x));
 
-    if (prevPlat && prevPlatX != null && p.grounded) {
-      p.x += movingX(prevPlat, elapsed) - prevPlatX;
+    // Una plataforma móvil arrastra a quien está encima: se suma lo que se ha
+    // desplazado desde el tick anterior (p.standX guarda dónde estaba)
+    if (prevPlat && prevPlat.type === 'move' && p.grounded && p.standX != null) {
+      p.x += movingX(prevPlat, elapsed) - p.standX;
     }
+    p.x = Math.max(PLAYER_R, Math.min(WORLD_W - PLAYER_R, p.x));
 
     // Aterrizaje (solo desde arriba, plataformas de un solo sentido)
     p.grounded = false;
@@ -366,6 +404,7 @@ function update() {
           p.vy = 0;
           p.grounded = true;
           p.standingOn = plat.id;
+          p.standX = plat.type === 'move' ? px : null;
           p.lastGroundY = plat.y;
           if (plat.type === 'checkpoint') {
             const row = Math.round((GROUND_Y - plat.y) / ROW_H);
@@ -381,8 +420,9 @@ function update() {
       }
     }
 
-    // Pinchos
-    if (now >= (p.invulnUntil || 0)) {
+    // Pinchos: solo hacen daño al caer o caminar sobre ellos, no al atravesarlos
+    // subiendo (el salto llega a más de dos filas de altura y no se podrían esquivar)
+    if (p.vy >= 0 && now >= (p.invulnUntil || 0)) {
       for (const plat of level.platforms) {
         if (plat.type !== 'spike') continue;
         if (p.x + PLAYER_R > plat.x && p.x - PLAYER_R < plat.x + plat.w &&
@@ -399,11 +439,11 @@ function update() {
         if (now < a.fireAt || a.hit) continue;
         if (Math.abs(a.x - p.x) < PLAYER_R + 6 && Math.abs(a.y - p.y) < PLAYER_R + 2) {
           a.hit = true;
-          p.vx = a.dir * ARROW_KNOCK_VX;
-          p.vy = ARROW_KNOCK_VY;
+          p.vx = a.dir * level.cfg.knockVx;
+          p.vy = level.cfg.knockVy;
           p.grounded = false;
           p.standingOn = null;
-          p.knock = ARROW_KNOCK_TICKS;
+          p.knock = level.cfg.knockTicks;
           events.push({ k: 'arrow', id: p.id });
           break;
         }
