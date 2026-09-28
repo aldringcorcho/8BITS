@@ -13,7 +13,7 @@ const FONT = '"Press Start 2P", "Courier New", monospace';
 // URL pública del servidor WebSocket (Render/Railway/Fly...). Vacío = mismo origen (uso local con INICIAR.bat).
 const BACKEND_URL = 'https://eightbits-dj6n.onrender.com';
 
-let ws, myId = null, isHost = false, joined = false;
+let ws, myId = null, joined = false;
 let worldW = W, groundY = 4000, finishY = 0, rowH = 46, maxPlayers = 20, totalCp = 7;
 let platforms = [], platformsById = new Map();
 let brokenSet = new Set(), movingPos = new Map();
@@ -24,7 +24,8 @@ let shakeUntil = 0;
 let muted = false;
 let lastListKey = '';
 let camY = 0;
-let myDeath = null;       // 'lava' | 'fell': para el mensaje al quedar eliminado
+let track = 'easy';       // pista de la partida actual: cambia el aspecto del mapa
+let myDeath = null;      // 'lava' | 'fell': para el mensaje al quedar eliminado
 
 // ------------------------------------------------------------
 //  Sonido 8 bits (WebAudio, sin archivos)
@@ -76,9 +77,7 @@ function connect() {
   const backend = local ? '' : BACKEND_URL;
   const host = backend ? backend.replace(/^https?:\/\//, '') : location.host;
   const proto = (backend ? backend.startsWith('https') : location.protocol === 'https:') ? 'wss' : 'ws';
-  const hostKey = new URLSearchParams(location.search).get('host');
-  const qs = hostKey ? `?host=${encodeURIComponent(hostKey)}` : '';
-  ws = new WebSocket(`${proto}://${host}${qs}`);
+  ws = new WebSocket(`${proto}://${host}`);
   ws.onopen = () => { $('#offline').hidden = true; };
   ws.onmessage = e => {
     const m = JSON.parse(e.data);
@@ -105,26 +104,22 @@ function setLevel(list) {
 
 function onWelcome(m) {
   myId = m.id;
-  isHost = m.isHost;
   worldW = m.worldW; groundY = m.groundY; finishY = m.finishY; rowH = m.rowH;
   maxPlayers = m.maxPlayers; totalCp = m.totalCp;
   setLevel(m.level);
+  if (m.track) track = m.track;
 
-  $('#hostPanel').hidden = !isHost;
-  if (isHost) {
-    showScreen('game');
-  } else {
-    showScreen('join');
-    let saved = '';
-    try { saved = localStorage.getItem('8bits-name') || ''; } catch {}
-    $('#nameInput').value = saved;
-    $('#nameInput').focus();
-    if (saved && sessionStorage.getItem('8bits-auto')) send({ t: 'join', name: saved });
-  }
+  showScreen('join');
+  let saved = '';
+  try { saved = localStorage.getItem('8bits-name') || ''; } catch {}
+  $('#nameInput').value = saved;
+  $('#nameInput').focus();
+  if (saved && sessionStorage.getItem('8bits-auto')) send({ t: 'join', name: saved });
 }
 
 function onLevel(m) {
   setLevel(m.platforms);
+  track = m.track || 'easy';
   worldW = m.worldW; groundY = m.groundY; finishY = m.finishY; rowH = m.rowH; totalCp = m.totalCp;
 }
 
@@ -134,7 +129,6 @@ function onJoined(m) {
     localStorage.setItem('8bits-name', m.name);
     sessionStorage.setItem('8bits-auto', '1');
   } catch {}
-  $('#hostJoinForm').hidden = true;
   showScreen('game');
 }
 
@@ -148,14 +142,29 @@ $('#joinForm').addEventListener('submit', e => {
   initAudio();
   send({ t: 'join', name: $('#nameInput').value.toUpperCase() });
 });
-$('#hostJoinForm').addEventListener('submit', e => {
-  e.preventDefault();
-  initAudio();
-  const n = $('#hostName').value.trim();
-  if (n) send({ t: 'join', name: n.toUpperCase() });
-});
 $('#btnStart').addEventListener('click', () => { initAudio(); send({ t: 'start' }); });
-$('#btnStop').addEventListener('click', () => send({ t: 'stop' }));
+for (const b of document.querySelectorAll('#trackPick button')) {
+  b.addEventListener('click', () => { initAudio(); send({ t: 'vote', v: b.dataset.track }); });
+}
+
+const TRACK_NAMES = { easy: 'FÁCIL', hard: 'DIFÍCIL' };
+const TRACK_COLORS = { easy: '#00e436', hard: '#ff004d' };
+
+// Cada pista tiene su propio aspecto: FÁCIL es un cielo con nubes, DIFÍCIL un volcán con brasas
+const THEMES = {
+  easy: {
+    sky: t => `rgb(${18 + t * 10},${24 + t * 30},${74 + t * 90})`,
+    deco: 'clouds',
+    ground: ['#5f574f', '#3a332e'],
+    normal: ['#8f7a5a', '#6b5a41'],
+  },
+  hard: {
+    sky: t => `rgb(${40 + t * 30},${6 + t * 6},${14 + t * 10})`,
+    deco: 'embers',
+    ground: ['#2b1b1b', '#120a0a'],
+    normal: ['#4a3f45', '#ff004d'],
+  },
+};
 
 // ------------------------------------------------------------
 //  Estado recibido del servidor
@@ -212,6 +221,12 @@ function handleEvent(ev) {
     addFeedMsg(`${ev.name} cayó en la lava`);
     if (ev.id === myId) { myDeath = 'lava'; shakeUntil = performance.now() + 300; }
   }
+  if (ev.k === 'track') {
+    const name = TRACK_NAMES[ev.v];
+    addFeedMsg(ev.tie
+      ? `Empate ${ev.easy}-${ev.hard}: al azar sale ${name}`
+      : `Pista ${name} (${ev.easy} fácil / ${ev.hard} difícil)`);
+  }
   if (ev.k === 'finish') {
     sfx.finish();
     addFeedMsg(`${ev.name} ¡llegó a la cima!`);
@@ -248,7 +263,7 @@ function updateHud() {
 
 function updateSide() {
   const ps = [...curr.p].sort((a, b) => (b.fin - a.fin) || (b.al - a.al) || (b.pct - a.pct));
-  const key = ps.map(p => `${p.id}|${p.n}|${p.pct}|${p.al}|${p.ig}|${p.fin}`).join(';') + curr.ph;
+  const key = ps.map(p => `${p.id}|${p.n}|${p.pct}|${p.al}|${p.ig}|${p.fin}|${p.vo}`).join(';') + curr.ph + curr.tr;
   if (key === lastListKey) return;
   lastListKey = key;
 
@@ -269,17 +284,26 @@ function updateSide() {
     dot.style.background = p.c;
     name.append(dot, p.n);
     const info = document.createElement('span');
-    info.textContent = !playing ? 'LISTO'
+    info.textContent = !playing ? (TRACK_NAMES[p.vo] || 'SIN VOTO')
       : !p.ig ? 'ESPERA'
       : p.fin ? 'CIMA' : !p.al ? 'FUERA' : `${p.pct}%`;
     li.append(name, info);
     ul.appendChild(li);
   }
 
-  if (isHost) {
-    $('#btnStart').disabled = curr.ph !== 'lobby' || curr.p.length < 2;
-    $('#btnStart').textContent = curr.ph === 'lobby' && curr.p.length < 2 ? 'FALTAN JUGADORES' : 'EMPEZAR PARTIDA';
-    $('#btnStop').disabled = curr.ph === 'lobby';
+  // Panel de votación: en la sala marca mi voto y el recuento; en partida, la pista que salió
+  const lobby = curr.ph === 'lobby';
+  const m = me();
+  const noVotes = !curr.vt || curr.vt.easy + curr.vt.hard === 0;
+  $('#btnStart').disabled = !lobby || curr.p.length < 2 || noVotes;
+  $('#btnStart').textContent = !lobby ? 'PARTIDA EN CURSO'
+    : curr.p.length < 2 ? 'FALTAN JUGADORES'
+    : noVotes ? 'VOTA UNA PISTA' : 'EMPEZAR PARTIDA';
+  for (const b of document.querySelectorAll('#trackPick button')) {
+    const t = b.dataset.track;
+    b.classList.toggle('on', lobby ? !!m && m.vo === t : curr.tr === t);
+    b.disabled = !lobby;
+    b.querySelector('.votes').textContent = lobby && curr.vt ? curr.vt[t] : '';
   }
 }
 
@@ -316,6 +340,33 @@ addEventListener('blur', () => {
   for (const k in keys) keys[k] = false;
   inputDirty = true;
 });
+
+// Controles táctiles (móvil y tablet): cada botón sigue su propio dedo, así se
+// puede mantener ► y pulsar SALTAR a la vez.
+const isTouch = matchMedia('(any-pointer: coarse)').matches || navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
+if (isTouch) document.body.classList.add('is-touch');
+addEventListener('touchstart', () => document.body.classList.add('is-touch'), { once: true, passive: true });
+
+for (const b of document.querySelectorAll('#touch button')) {
+  const k = b.dataset.key;
+  const press = e => {
+    e.preventDefault();
+    initAudio();
+    try { b.setPointerCapture(e.pointerId); } catch {}
+    b.classList.add('pressed');
+    if (!keys[k]) { keys[k] = true; inputDirty = true; if (k === 'jump') sfx.jump(); }
+  };
+  const release = e => {
+    e.preventDefault();
+    b.classList.remove('pressed');
+    if (keys[k]) { keys[k] = false; inputDirty = true; }
+  };
+  b.addEventListener('pointerdown', press);
+  b.addEventListener('pointerup', release);
+  b.addEventListener('pointercancel', release);
+  b.addEventListener('lostpointercapture', release);
+  b.addEventListener('contextmenu', e => e.preventDefault());
+}
 
 // Enviar teclas como mucho 20 veces por segundo
 setInterval(() => {
@@ -370,9 +421,10 @@ function platX(p) {
 
 function drawPlatform(p, sy) {
   const px = platX(p), w = p.w;
+  const th = THEMES[track] || THEMES.easy;
   if (p.type === 'ground') {
-    ctx.fillStyle = '#5f574f'; ctx.fillRect(px, sy, w, 10);
-    ctx.fillStyle = '#3a332e'; ctx.fillRect(px, sy, w, 3);
+    ctx.fillStyle = th.ground[0]; ctx.fillRect(px, sy, w, 10);
+    ctx.fillStyle = th.ground[1]; ctx.fillRect(px, sy, w, 3);
   } else if (p.type === 'checkpoint') {
     ctx.fillStyle = '#00b3a4'; ctx.fillRect(px, sy, w, 6);
     ctx.fillStyle = '#00e436'; ctx.fillRect(px, sy, w, 2);
@@ -397,8 +449,29 @@ function drawPlatform(p, sy) {
       ctx.closePath(); ctx.fill();
     }
   } else {
-    ctx.fillStyle = '#8f7a5a'; ctx.fillRect(px, sy, w, 6);
-    ctx.fillStyle = '#6b5a41'; ctx.fillRect(px, sy + 5, w, 1);
+    ctx.fillStyle = th.normal[0]; ctx.fillRect(px, sy, w, 6);
+    ctx.fillStyle = th.normal[1]; ctx.fillRect(px, sy + 5, w, 1);
+  }
+}
+
+// Decoración de fondo en coordenadas de pantalla, desplazada a 1/4 de la cámara (parallax)
+function drawDeco(kind, now) {
+  const par = camY * 0.25;
+  if (kind === 'clouds') {
+    ctx.fillStyle = 'rgba(255,241,232,0.10)';
+    for (let i = 0; i < 9; i++) {
+      const x = ((i * 137 + now / 200 * (1 + i % 3)) % (W + 80)) - 60;
+      const y = (((i * 89 - par) % H) + H) % H;
+      ctx.fillRect(Math.round(x), Math.round(y), 40 + (i % 3) * 14, 8);
+      ctx.fillRect(Math.round(x) + 8, Math.round(y) - 6, 22, 6);
+    }
+  } else {
+    for (let i = 0; i < 28; i++) {
+      const x = (i * 53 + Math.sin(now / 900 + i) * 10) % W;
+      const y = (((i * 97 - now / (18 + i % 5) - par) % H) + H) % H;
+      ctx.fillStyle = i % 3 ? 'rgba(255,163,0,0.55)' : 'rgba(255,0,77,0.6)';
+      ctx.fillRect(Math.round(x), Math.round(y), 2, 2);
+    }
   }
 }
 
@@ -458,10 +531,12 @@ function render() {
   ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
   ctx.imageSmoothingEnabled = false;
 
-  // Fondo (cielo que se oscurece según la altura)
+  // Fondo según la pista (cielo que cambia con la altura + decoración con parallax)
+  const th = THEMES[curr && curr.ph !== 'lobby' ? track : 'easy'] || THEMES.easy;
   const skyT = curr ? Math.max(0, Math.min(1, 1 - camY / groundY)) : 0;
-  ctx.fillStyle = `rgb(${18 + skyT * 10},${24 + skyT * 30},${74 + skyT * 90})`;
+  ctx.fillStyle = th.sky(skyT);
   ctx.fillRect(0, 0, W, H);
+  drawDeco(th.deco, performance.now());
 
   if (!curr) return;
 
@@ -533,11 +608,14 @@ function drawOverlay(m) {
     dim();
     text('8 BITS BATTLE', W / 2, 80, 22, '#ffec27');
     text('CARRERA VERTICAL', W / 2, 110, 10, '#29adff');
-    text(`${curr.p.length} JUGADOR${curr.p.length === 1 ? '' : 'ES'} CONECTADO${curr.p.length === 1 ? '' : 'S'}`, W / 2, 150, 8, '#29adff');
-    if (isHost) {
-      text(curr.p.length < 2 ? 'ESPERANDO A LOS ALUMNOS...' : 'PULSA "EMPEZAR PARTIDA"', W / 2, 185, 8, '#00e436');
-    } else if (blink) {
-      text('ESPERANDO A QUE EMPIECE LA PARTIDA...', W / 2, 185, 8, '#00e436');
+    text(`${curr.p.length} JUGADOR${curr.p.length === 1 ? '' : 'ES'} CONECTADO${curr.p.length === 1 ? '' : 'S'}`, W / 2, 140, 8, '#29adff');
+    const vt = curr.vt || { easy: 0, hard: 0 };
+    text(`VOTOS  FÁCIL ${vt.easy}`, W / 2 - 8, 162, 9, TRACK_COLORS.easy, 'right');
+    text(`DIFÍCIL ${vt.hard}`, W / 2 + 8, 162, 9, TRACK_COLORS.hard, 'left');
+    if (curr.p.length < 2) {
+      if (blink) text('ESPERANDO A MÁS JUGADORES...', W / 2, 190, 8, '#00e436');
+    } else {
+      text('VOTA LA PISTA Y PULSA "EMPEZAR PARTIDA"', W / 2, 190, 8, '#00e436');
     }
     text('SALTA DE PLATAFORMA EN PLATAFORMA · ¡EL PRIMERO EN LLEGAR ARRIBA GANA!', W / 2, 230, 6, '#83769c');
     text(`HASTA ${maxPlayers} JUGADORES · LA LAVA SUBE · SI TE CAES, PIERDES`, W / 2, 245, 6, '#83769c');
@@ -546,9 +624,11 @@ function drawOverlay(m) {
     dim();
     text(String(curr.cd), W / 2, H / 2 - 10, 48, '#ffec27');
     text('¡PREPÁRATE!', W / 2, H / 2 + 40, 10, '#fff1e8');
+    text(`PISTA ${TRACK_NAMES[curr.tr] || ''}`, W / 2, H / 2 + 60, 8, TRACK_COLORS[curr.tr] || '#fff1e8');
   } else if (ph === 'playing') {
     const racing = curr.p.filter(p => p.ig && p.al && !p.fin).length;
     text(`SUBIENDO: ${racing}`, 8, 12, 8, '#fff1e8', 'left');
+    text(`PISTA ${TRACK_NAMES[curr.tr] || ''}`, W - 8, 12, 8, TRACK_COLORS[curr.tr] || '#fff1e8', 'right');
     if (m && m.ig && m.fin) {
       text('¡HAS LLEGADO A LA CIMA!', W / 2, H / 2, 14, '#ffec27');
     } else if (m && m.ig && !m.al) {

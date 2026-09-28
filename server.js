@@ -1,5 +1,5 @@
 // ============================================================
-//  8 BITS BATTLE - Servidor (host del profesor)
+//  8 BITS BATTLE - Servidor
 //  Carrera de obstáculos vertical: todos suben, solo puede llegar
 //  el primero a la cima. La lava persigue por abajo.
 // ============================================================
@@ -10,7 +10,6 @@ const { WebSocketServer } = require('ws');
 
 // ---------- Configuración ----------
 const PORT = Number(process.env.PORT) || 3000;
-const HOST_KEY = process.env.HOST_KEY || 'profe'; // clave secreta para el panel del profesor (cámbiala en producción)
 const TICK_MS = 1000 / 30;           // física
 const SEND_MS = 1000 / 20;           // envío por red
 const MAX_PLAYERS = 20;
@@ -22,7 +21,6 @@ const END_SCREEN_MS = 8000;
 const WORLD_W = 480;
 const ROW_H = 46;
 const NUM_ROWS = 80;                 // filas a escalar
-const CHECKPOINT_EVERY = 10;         // una plataforma segura de ancho completo cada N filas
 const GROUND_Y = NUM_ROWS * ROW_H;   // suelo (salida)
 const FINISH_Y = 0;                  // cima (meta)
 const PLAYER_R = 5;                  // caja de colisión (coincide con el sprite 10x10)
@@ -34,24 +32,54 @@ const JUMP_VY = -11.5;
 const MOVE_ACCEL = 0.7;
 const MAX_VX = 3.0;
 const FRICTION = 0.85;
-const BREAK_DELAY = 280;            // ms hasta que una plataforma "break" se desmorona
 const FALL_LOSE = ROW_H * 1.5;       // caer más de fila y media por debajo de la última plataforma = eliminado
 const RESPAWN_INVULN = 800;          // ms de invulnerabilidad tras reaparecer
 
 // ---------- Flechas (salen de los lados) ----------
-const ARROW_START = 3000;           // ms tras "¡YA!" antes de la primera flecha
-const ARROW_EVERY_MAX = 1600;        // ms entre flechas al principio...
-const ARROW_EVERY_MIN = 650;         // ...y al final (cada vez más seguidas)
-const ARROW_WARN = 700;              // ms de aviso "!" en el borde antes de disparar
 const ARROW_SPEED = 4;               // px por tick
 const ARROW_KNOCK_VX = 6;            // empujón horizontal al recibir una flecha
 const ARROW_KNOCK_VY = -4;
 const ARROW_KNOCK_TICKS = 12;        // ticks sin control tras el impacto
 
-// ---------- Lava ----------
-const LAVA_DELAY = 4000;             // empieza a subir 4s después de "¡YA!"
-const LAVA_SPEED = 16;               // px/s
-const LAVA_ACCEL = 0.2;            // px/s² (para que la partida siempre acabe)
+// ---------- Pistas (se eligen por votación en la sala de espera) ----------
+const TRACKS = {
+  easy: {
+    name: 'FÁCIL',
+    checkpointEvery: 10,             // una plataforma segura de ancho completo cada N filas
+    mainW: [32, 20],                 // ancho de la plataforma del camino: mínimo + aleatorio
+    mainPool: ['normal', 'normal', 'move', 'move', 'break', 'break'],
+    afterBreakPool: ['normal', 'normal', 'break'],
+    moveAmp: [22, 24], moveFreq: [0.002, 0.002],
+    extraChance: 0.8, secondExtraChance: 0.45, thirdExtraChance: 0,
+    extraPool: ['normal', 'move', 'break', 'spike', 'spike'],
+    breakDelay: 280,                 // ms hasta que una plataforma "break" se desmorona
+    arrowStart: 3000,                // ms tras "¡YA!" antes de la primera flecha
+    arrowEveryMax: 1600,             // ms entre flechas al principio...
+    arrowEveryMin: 650,              // ...y al final (cada vez más seguidas)
+    arrowWarn: 700,                  // ms de aviso "!" en el borde antes de disparar
+    lavaDelay: 4000,                 // la lava empieza a subir 4s después de "¡YA!"
+    lavaSpeed: 16,                   // px/s
+    lavaAccel: 0.2,                  // px/s² (para que la partida siempre acabe)
+  },
+  hard: {
+    name: 'DIFÍCIL',
+    checkpointEvery: 16,
+    mainW: [26, 14],
+    mainPool: ['normal', 'move', 'move', 'break', 'break', 'break'],
+    afterBreakPool: ['normal', 'break', 'break'],
+    moveAmp: [24, 28], moveFreq: [0.0025, 0.0025],
+    extraChance: 1, secondExtraChance: 0.7, thirdExtraChance: 0.4,
+    extraPool: ['normal', 'move', 'break', 'spike', 'spike', 'spike'],
+    breakDelay: 200,
+    arrowStart: 2000,
+    arrowEveryMax: 900,
+    arrowEveryMin: 350,
+    arrowWarn: 550,
+    lavaDelay: 3000,
+    lavaSpeed: 18,
+    lavaAccel: 0.25,
+  },
+};
 
 // Paleta 8 bits para hasta 20 jugadores
 const COLORS = [
@@ -81,8 +109,10 @@ function mulberry32(seed) {
 }
 const pick = (rnd, arr) => arr[Math.floor(rnd() * arr.length)];
 
-function buildLevel(seed) {
+function buildLevel(seed, track) {
   const rnd = mulberry32(seed);
+  const cfg = TRACKS[track];
+  const between = ([min, extra]) => min + rnd() * extra;
   const platforms = [];
   let nextId = 0;
   const add = (x, y, w, type, extra) => {
@@ -98,35 +128,35 @@ function buildLevel(seed) {
   for (let row = 1; row < NUM_ROWS; row++) {
     const y = GROUND_Y - row * ROW_H;
 
-    if (row % CHECKPOINT_EVERY === 0) {
-      add(0, y, WORLD_W, 'checkpoint', { cpIdx: row / CHECKPOINT_EVERY });
+    if (row % cfg.checkpointEvery === 0) {
+      add(0, y, WORLD_W, 'checkpoint', { cpIdx: row / cfg.checkpointEvery });
       cursorX = WORLD_W / 2 + (rnd() * 2 - 1) * 40;
       prevMainType = 'checkpoint';
       continue;
     }
 
     // Plataforma principal: garantiza que siempre hay un camino posible
-    const w = 32 + rnd() * 20;
+    const w = between(cfg.mainW);
     cursorX += (rnd() * 2 - 1) * MAX_JUMP_DX;
     cursorX = Math.max(w / 2 + 8, Math.min(WORLD_W - w / 2 - 8, cursorX));
     // Tras una "break" no hay tiempo de esperar a que una "move" se acerque: evitamos esa combinación imposible
-    const mainPool = prevMainType === 'break'
-      ? ['normal', 'normal', 'break']
-      : ['normal', 'normal', 'move', 'move', 'break', 'break'];
-    const mainType = pick(rnd, mainPool);
+    const mainType = pick(rnd, prevMainType === 'break' ? cfg.afterBreakPool : cfg.mainPool);
     add(cursorX - w / 2, y, w, mainType,
-      mainType === 'move' ? { baseX: cursorX - w / 2, amp: 22 + rnd() * 24, freq: 0.002 + rnd() * 0.002, phase: rnd() * Math.PI * 2 } : {});
+      mainType === 'move' ? { baseX: cursorX - w / 2, amp: between(cfg.moveAmp), freq: between(cfg.moveFreq), phase: rnd() * Math.PI * 2 } : {});
     prevMainType = mainType;
 
-    // Plataformas extra (hasta 2): variedad y trampas, nunca son el único camino
-    const extras = rnd() < 0.8 ? (rnd() < 0.45 ? 2 : 1) : 0;
+    // Plataformas extra (hasta 3): variedad y trampas, nunca son el único camino
+    let extras = 0;
+    if (rnd() < cfg.extraChance) extras++;
+    if (extras && rnd() < cfg.secondExtraChance) extras++;
+    if (extras === 2 && rnd() < cfg.thirdExtraChance) extras++;
     for (let k = 0; k < extras; k++) {
       const ew = 30 + rnd() * 24;
       let ex = rnd() * (WORLD_W - ew);
       if (Math.abs((ex + ew / 2) - cursorX) < (ew + w) / 2 + 6) ex = (ex + WORLD_W / 2) % (WORLD_W - ew);
-      const extraType = pick(rnd, ['normal', 'move', 'break', 'spike', 'spike']);
+      const extraType = pick(rnd, cfg.extraPool);
       add(ex, y, ew, extraType,
-        extraType === 'move' ? { baseX: ex, amp: 16 + rnd() * 24, freq: 0.002 + rnd() * 0.002, phase: rnd() * Math.PI * 2 } : {});
+        extraType === 'move' ? { baseX: ex, amp: between(cfg.moveAmp) - 6, freq: between(cfg.moveFreq), phase: rnd() * Math.PI * 2 } : {});
     }
   }
 
@@ -134,7 +164,7 @@ function buildLevel(seed) {
 
   const byId = new Map(platforms.map(p => [p.id, p]));
   return {
-    seed, platforms, byId,
+    seed, track, cfg, platforms, byId,
     finish: platforms.find(p => p.type === 'finish'),
     totalCp: platforms.filter(p => p.type === 'checkpoint').length,
   };
@@ -157,6 +187,21 @@ let colorIdx = 0;
 let arrows = [];
 let nextArrowAt = 0;
 let arrowSeq = 0;
+
+// Recuento de votos de la sala. Gana la pista más votada; si hay empate (o nadie
+// ha votado) se sortea.
+function tallyVotes() {
+  const votes = { easy: 0, hard: 0 };
+  for (const p of players.values()) if (p.joined && votes[p.vote] != null) votes[p.vote]++;
+  return votes;
+}
+
+function chooseTrack() {
+  const votes = tallyVotes();
+  const tie = votes.easy === votes.hard;
+  const track = tie ? (Math.random() < 0.5 ? 'easy' : 'hard') : (votes.easy > votes.hard ? 'easy' : 'hard');
+  return { track, votes, tie };
+}
 
 function setPhase(p) { phase = p; phaseStart = Date.now(); }
 
@@ -199,17 +244,23 @@ function spawnArrow(fighters, now, elapsed) {
     x: dir === 1 ? 0 : WORLD_W,
     y: t.y + (Math.random() * 30 - 20),
     dir,
-    fireAt: now + ARROW_WARN,
+    fireAt: now + level.cfg.arrowWarn,
   });
+  const { arrowEveryMax, arrowEveryMin } = level.cfg;
   const progress = Math.min(1, elapsed / 120000);
-  nextArrowAt = now + ARROW_EVERY_MAX - (ARROW_EVERY_MAX - ARROW_EVERY_MIN) * progress;
+  nextArrowAt = now + arrowEveryMax - (arrowEveryMax - arrowEveryMin) * progress;
 }
 
 function startCountdown() {
   const joined = [...players.values()].filter(p => p.joined);
   if (joined.length < 2 || phase !== 'lobby') return;
+  // Sin ningún voto no hay pista elegida: no se puede empezar
+  const cast = tallyVotes();
+  if (cast.easy + cast.hard === 0) return;
 
-  level = buildLevel(Date.now() ^ Math.floor(Math.random() * 1e9));
+  const { track, votes, tie } = chooseTrack();
+  level = buildLevel(Date.now() ^ Math.floor(Math.random() * 1e9), track);
+  events.push({ k: 'track', v: track, easy: votes.easy, hard: votes.hard, tie });
   winner = null;
   currentLavaY = GROUND_Y + 40;
   arrows = [];
@@ -228,7 +279,7 @@ function startCountdown() {
   });
 
   const payload = JSON.stringify({
-    t: 'level',
+    t: 'level', track: level.track,
     platforms: level.platforms.map(({ id, x, y, w, type }) => ({ id, x, y, w, type })),
     worldW: WORLD_W, groundY: GROUND_Y, finishY: FINISH_Y, rowH: ROW_H, totalCp: level.totalCp,
   });
@@ -241,7 +292,8 @@ function backToLobby() {
   winner = null;
   currentLavaY = GROUND_Y + 40;
   arrows = [];
-  for (const p of players.values()) { p.inGame = false; p.alive = true; p.finished = false; }
+  // Cada ronda empieza con una votación nueva
+  for (const p of players.values()) { p.inGame = false; p.alive = true; p.finished = false; p.vote = null; }
   setPhase('lobby');
 }
 
@@ -255,10 +307,11 @@ function update() {
   const elapsed = now - phaseStart;
 
   // Lava: sube tras un retraso, acelerando poco a poco para que la partida siempre termine
-  const t = elapsed - LAVA_DELAY;
+  const { lavaDelay, lavaSpeed, lavaAccel } = level.cfg;
+  const t = elapsed - lavaDelay;
   if (t > 0) {
     const sec = t / 1000;
-    currentLavaY = GROUND_Y + 40 - (LAVA_SPEED * sec + 0.5 * LAVA_ACCEL * sec * sec);
+    currentLavaY = GROUND_Y + 40 - (lavaSpeed * sec + 0.5 * lavaAccel * sec * sec);
   } else {
     currentLavaY = GROUND_Y + 40;
   }
@@ -266,7 +319,7 @@ function update() {
   const fighters = [...players.values()].filter(p => p.inGame && p.alive && !p.finished);
 
   // Flechas: aviso en el borde, luego cruzan la pantalla en horizontal
-  if (elapsed >= ARROW_START && now >= nextArrowAt) spawnArrow(fighters, now, elapsed);
+  if (elapsed >= level.cfg.arrowStart && now >= nextArrowAt) spawnArrow(fighters, now, elapsed);
   for (const a of arrows) if (now >= a.fireAt) a.x += a.dir * ARROW_SPEED;
   arrows = arrows.filter(a => a.x >= -20 && a.x <= WORLD_W + 20);
 
@@ -321,7 +374,7 @@ function update() {
               events.push({ k: 'cp', id: p.id });
             }
           } else if (plat.type === 'break' && plat.crumbleAt == null) {
-            plat.crumbleAt = now + BREAK_DELAY;
+            plat.crumbleAt = now + level.cfg.breakDelay;
           }
           break;
         }
@@ -414,13 +467,15 @@ function snapshot() {
   return JSON.stringify({
     t: 's',
     ph: phase,
+    tr: phase === 'lobby' || !level ? null : level.track,
+    vt: phase === 'lobby' ? tallyVotes() : null,
     cd: phase === 'countdown' ? Math.ceil((COUNTDOWN_MS - elapsed) / 1000) : 0,
     lv: Math.round(currentLavaY),
     w: winner,
     p: [...players.values()].filter(p => p.joined).map(p => ({
       id: p.id,
       x: Math.round(p.x), y: Math.round(p.y),
-      al: p.alive, ig: p.inGame, fin: !!p.finished,
+      al: p.alive, ig: p.inGame, fin: !!p.finished, vo: p.vote,
       cp: p.checkpoint ? p.checkpoint.idx : 0,
       pct: p.finished ? 100 : (level ? Math.max(0, Math.min(100, Math.round((GROUND_Y - p.y) / (GROUND_Y - FINISH_Y) * 100))) : 0),
     })),
@@ -457,18 +512,9 @@ const server = http.createServer((req, res) => {
 // ---------- WebSockets ----------
 const wss = new WebSocketServer({ server, maxPayload: 1024 });
 
-// Render (y otros PaaS) ponen la app detrás de un proxy interno: remoteAddress deja
-// de ser la IP real del cliente y parece "local" para TODO el mundo, así que ahí
-// solo vale la clave secreta.
-const BEHIND_PROXY = !!process.env.RENDER;
-
-wss.on('connection', (ws, req) => {
-  const addr = req.socket.remoteAddress || '';
-  const reqUrl = new URL(req.url, 'http://x');
-  const localAddr = !BEHIND_PROXY && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(addr);
-  const isHost = localAddr || reqUrl.searchParams.get('host') === HOST_KEY;
+wss.on('connection', ws => {
   const p = {
-    id: nextId++, ws, name: '', joined: false, isHost,
+    id: nextId++, ws, name: '', joined: false, vote: null,
     color: COLORS[colorIdx++ % COLORS.length],
     x: 0, y: 0, vx: 0, vy: 0, grounded: true, standingOn: null,
     alive: true, inGame: false, finished: false, checkpoint: null, invulnUntil: 0,
@@ -477,10 +523,11 @@ wss.on('connection', (ws, req) => {
   players.set(p.id, p);
 
   ws.send(JSON.stringify({
-    t: 'welcome', id: p.id, isHost, maxPlayers: MAX_PLAYERS,
+    t: 'welcome', id: p.id, maxPlayers: MAX_PLAYERS,
     worldW: WORLD_W, groundY: GROUND_Y, finishY: FINISH_Y, rowH: ROW_H,
-    totalCp: level ? level.totalCp : Math.floor((NUM_ROWS - 1) / CHECKPOINT_EVERY),
+    totalCp: level ? level.totalCp : Math.floor((NUM_ROWS - 1) / TRACKS.easy.checkpointEvery),
     level: level ? level.platforms.map(({ id, x, y, w, type }) => ({ id, x, y, w, type })) : null,
+    track: level ? level.track : null,
   }));
   broadcastRoster();
 
@@ -504,11 +551,12 @@ wss.on('connection', (ws, req) => {
       case 'in':
         p.input = { l: !!m.l, r: !!m.r, jump: !!m.jump };
         break;
+      // Sin profesor: cualquier jugador que ya haya entrado puede votar y empezar
       case 'start':
-        if (p.isHost) startCountdown();
+        if (p.joined) startCountdown();
         break;
-      case 'stop':
-        if (p.isHost && phase !== 'lobby') backToLobby();
+      case 'vote':
+        if (p.joined && phase === 'lobby' && TRACKS[m.v]) p.vote = m.v;
         break;
     }
   });
@@ -537,6 +585,5 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('\n  ==========================================');
   console.log('        8 BITS BATTLE  -  servidor listo');
   console.log('  ==========================================\n');
-  console.log(`  Escuchando en el puerto ${PORT}`);
-  console.log(`  Panel del profesor: añade ?host=${HOST_KEY} a la URL\n`);
+  console.log(`  Escuchando en el puerto ${PORT}\n`);
 });

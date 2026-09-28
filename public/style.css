@@ -146,10 +146,14 @@ canvas {
   width: 100%;
 }
 
-#hostPanel { display: flex; flex-direction: column; gap: 10px; }
-#hostJoinForm { display: flex; gap: 8px; }
-#hostJoinForm input { font-size: 10px; padding: 8px; }
-#hostJoinForm button { width: auto; font-size: 10px; }
+#lobbyPanel { display: flex; flex-direction: column; gap: 10px; }
+#trackPick { display: flex; gap: 8px; }
+#trackPick button { flex: 1; font-size: 10px; background: #5f574f; box-shadow: inset -4px -4px 0 #3a332e, 4px 4px 0 #000; }
+#trackPick button[data-track="easy"].on { background: #00a33a; box-shadow: inset -4px -4px 0 #006b26, 4px 4px 0 #000; }
+#trackPick button[data-track="hard"].on { background: var(--red); box-shadow: inset -4px -4px 0 #7e2553, 4px 4px 0 #000; }
+#trackPick button { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+#trackPick small { font-size: 7px; line-height: 1.5; opacity: .85; }
+#trackPick .votes { font-size: 12px; }
 
 ul { list-style: none; margin: 8px 0 0; padding: 0; font-size: 10px; }
 #playerList li {
@@ -167,6 +171,74 @@ ul { list-style: none; margin: 8px 0 0; padding: 0; font-size: 10px; }
 #feed li b { color: var(--text); font-weight: normal; }
 
 .tiny { font-size: 8px; color: var(--dim); text-align: center; }
+
+/* ---- Controles táctiles (se activan con la clase .touch en <body>) ---- */
+.touch { display: none; }
+.touch-help { display: none; }
+body.is-touch .touch-help { display: block; }
+body.is-touch .keys-help { display: none; }
+
+body.is-touch .touch {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 10px max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  pointer-events: none;           /* solo los botones capturan el toque */
+}
+.touch button {
+  pointer-events: auto;
+  width: 76px; height: 76px;
+  padding: 0;
+  font-size: 22px;
+  background: rgba(29, 43, 83, .78);
+  border: 4px solid var(--line);
+  box-shadow: 4px 4px 0 #000;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.touch-move { display: flex; gap: 12px; }
+.touch .touch-jump {
+  width: 96px; height: 96px;
+  border-radius: 50%;
+  border-color: var(--red);
+  background: rgba(255, 0, 77, .55);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+}
+.touch .touch-jump small { font-size: 8px; }
+.touch button.pressed { transform: translate(2px, 2px); box-shadow: none; filter: brightness(1.5); }
+
+/* Deja sitio abajo para que los botones no tapen el contenido */
+body.is-touch #game { padding-bottom: 130px; }
+/* En horizontal el lienzo se limita al alto de la pantalla y los botones quedan a los lados */
+body.is-touch canvas { width: min(100%, calc((100svh - 24px) * 1.5)); margin: 0 auto; }
+body.is-touch .stage { display: flex; flex-direction: column; align-items: center; }
+
+/* ---- Pantallas pequeñas ---- */
+@media (max-width: 700px) {
+  .screen { padding: 8px; }
+  .layout { gap: 10px; }
+  .stage { flex-basis: 100%; }
+  .side { flex-basis: 100%; }
+  canvas { border-width: 2px; box-shadow: 3px 3px 0 #000; }
+  .hud { font-size: 10px; gap: 4px 16px; margin-top: 8px; }
+  .help { font-size: 8px; }
+  .touch button { width: 64px; height: 64px; }
+  .touch .touch-jump { width: 84px; height: 84px; }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  body.is-touch #game { padding-bottom: 12px; }
+  body.is-touch .hud { font-size: 9px; margin-top: 4px; }
+  body.is-touch canvas { width: min(100%, calc((100svh - 56px) * 1.5)); }
+  body.is-touch .touch button { width: 64px; height: 64px; }
+  body.is-touch .touch .touch-jump { width: 84px; height: 84px; }
+}
 
 .offline {
   position: fixed;

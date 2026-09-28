@@ -2,7 +2,9 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>8 BITS BATTLE</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -20,10 +22,11 @@
       <button type="submit">¡A LUCHAR!</button>
     </form>
     <div class="help">
-      <p>MOVER: A / D · FLECHAS</p>
-      <p>SALTAR: W · FLECHA ARRIBA · ESPACIO</p>
+      <p class="keys-help">MOVER: A / D · FLECHAS</p>
+      <p class="keys-help">SALTAR: W · FLECHA ARRIBA · ESPACIO</p>
+      <p class="touch-help">MOVER: BOTONES ◄ ► · SALTAR: BOTÓN ▲</p>
       <p>CUIDADO: HAY PLATAFORMAS QUE SE <b>ROMPEN</b>, OTRAS SE <b>MUEVEN</b> Y HAY <b>PINCHOS</b></p>
-      <p>SI CAES VUELVES AL ÚLTIMO <b>CHECKPOINT</b>. ¡Y LA <b>LAVA</b> SUBE!</p>
+      <p>SI TE <b>CAES</b>, PIERDES. ESQUIVA LAS <b>FLECHAS</b>. ¡Y LA <b>LAVA</b> SUBE!</p>
     </div>
   </section>
 
@@ -40,14 +43,14 @@
       </div>
 
       <aside class="side">
-        <div id="hostPanel" class="box" hidden>
-          <div class="lbl">PANEL DEL PROFESOR</div>
+        <div id="lobbyPanel" class="box">
+          <div class="lbl">VOTA LA PISTA</div>
+          <div id="trackPick">
+            <button type="button" data-track="easy">FÁCIL<small>CIELO · MENOS TRAMPAS</small><span class="votes">0</span></button>
+            <button type="button" data-track="hard">DIFÍCIL<small>VOLCÁN · MÁS TRAMPAS Y FLECHAS</small><span class="votes">0</span></button>
+          </div>
+          <div class="tiny">SI HAY EMPATE, SE ELIGE AL AZAR</div>
           <button id="btnStart">EMPEZAR PARTIDA</button>
-          <button id="btnStop" class="secondary">TERMINAR PARTIDA</button>
-          <form id="hostJoinForm">
-            <input id="hostName" maxlength="12" placeholder="JUGAR TAMBIÉN" autocomplete="off">
-            <button type="submit" class="secondary">UNIRME</button>
-          </form>
         </div>
 
         <div class="box">
@@ -60,8 +63,17 @@
           <ul id="feed"></ul>
         </div>
 
-        <div class="tiny">A/D MOVER · W SALTAR · M SONIDO</div>
+        <div class="tiny keys-help">A/D MOVER · W SALTAR · M SONIDO</div>
       </aside>
+    </div>
+
+    <!-- Controles táctiles (móvil y tablet) -->
+    <div id="touch" class="touch" aria-hidden="true">
+      <div class="touch-move">
+        <button type="button" data-key="l">◄</button>
+        <button type="button" data-key="r">►</button>
+      </div>
+      <button type="button" data-key="jump" class="touch-jump">▲<small>SALTAR</small></button>
     </div>
   </section>
 
