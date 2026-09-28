@@ -35,7 +35,8 @@ Cada `git push` a `main` redespliega Vercel y Render automáticamente.
 - Desde los lados salen **flechas** (avisadas con un "!" rojo) que te empujan.
 - La **lava** empieza a subir a los pocos segundos, acelerando poco a poco. Si te alcanza, quedas eliminado.
 - En la cima está el **jefe**: sáltale encima **3 veces** para derrotarlo. Lanza **bolas de fuego** al jugador más cercano; si te da una (o lo tocas de lado) vuelves al último checkpoint.
-- Gana el primero que derrote al jefe; si quedan todos eliminados menos uno, gana el superviviente.
+- **Modo final:** en una partida de varios, cuando solo quedan 2 jugadores ya nadie puede quedar eliminado: si caes o te toca la lava vuelves a tu checkpoint, y la lava no sube por encima del checkpoint del más atrasado. Así los dos últimos llegan siempre al jefe.
+- Gana el primero que derrote al jefe. Ser el último superviviente no basta: hay que vencer al jefe.
 
 ## Ajustes
 Están al principio de `server.js`. Cada pista tiene su configuración en `TRACKS` (checkpoints, trampas, flechas, lava). También `NUM_ROWS` (altura de la torre), `MAX_PLAYERS` y la física (`GRAVITY`, `JUMP_VY`, `MAX_VX`).

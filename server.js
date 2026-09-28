@@ -47,6 +47,8 @@ const MAX_VX = 3.0;
 const FRICTION = 0.85;
 const FALL_LOSE = ROW_H * 1.5;       // caer más de fila y media por debajo de la última plataforma = eliminado
 const RESPAWN_INVULN = 800;          // ms de invulnerabilidad tras reaparecer
+const LAVA_BELOW_CP = 30;            // en modo final, la lava se queda así de lejos bajo el checkpoint
+const LAVA_MAX_STEP = 3;             // px por tick como máximo que sube la lava
 // Ayudas de control (compensan la latencia de red): el salto se recuerda unos
 // ticks si se pulsa justo antes de aterrizar, y se puede saltar unos ticks
 // después de haber salido del borde de una plataforma.
@@ -240,6 +242,7 @@ let boss = null;
 let fireballs = [];
 let nextArrowAt = 0;
 let arrowSeq = 0;
+let finalMode = false;       // quedan 2 o menos: nadie puede quedar eliminado
 
 // Recuento de votos de la sala. Gana la pista más votada; si hay empate (o nadie
 // ha votado) se sortea.
@@ -392,6 +395,7 @@ function startCountdown() {
   events.push({ k: 'track', v: track, easy: votes.easy, hard: votes.hard, tie });
   winner = null;
   currentLavaY = GROUND_Y + 40;
+  finalMode = false;
   arrows = [];
   nextArrowAt = 0;
   boss = makeBoss();
@@ -438,17 +442,29 @@ function update() {
 
   const elapsed = now - phaseStart;
 
+  const fighters = [...players.values()].filter(p => p.inGame && p.alive && !p.finished);
+
+  // Modo final: en una partida de varios, cuando solo quedan 2 (o menos) ya no
+  // se puede quedar eliminado; así los dos últimos llegan seguro hasta el jefe.
+  const inGameCount = [...players.values()].filter(p => p.inGame).length;
+  const wasFinal = finalMode;
+  finalMode = inGameCount >= 2 && fighters.length <= 2;
+  if (finalMode && !wasFinal) events.push({ k: 'final', names: fighters.map(p => p.name) });
+
   // Lava: sube tras un retraso, acelerando poco a poco para que la partida siempre termine
   const { lavaDelay, lavaSpeed, lavaAccel } = level.cfg;
   const t = elapsed - lavaDelay;
+  let lavaTarget = GROUND_Y + 40;
   if (t > 0) {
     const sec = t / 1000;
-    currentLavaY = GROUND_Y + 40 - (lavaSpeed * sec + 0.5 * lavaAccel * sec * sec);
-  } else {
-    currentLavaY = GROUND_Y + 40;
+    lavaTarget = GROUND_Y + 40 - (lavaSpeed * sec + 0.5 * lavaAccel * sec * sec);
   }
-
-  const fighters = [...players.values()].filter(p => p.inGame && p.alive && !p.finished);
+  // En modo final la lava se queda por debajo del checkpoint del más atrasado
+  if (finalMode && fighters.length) {
+    lavaTarget = Math.max(lavaTarget, Math.max(...fighters.map(p => p.checkpoint.y)) + LAVA_BELOW_CP);
+  }
+  // Nunca sube a saltos: como mucho LAVA_MAX_STEP px por tick
+  currentLavaY = Math.max(lavaTarget, currentLavaY - LAVA_MAX_STEP);
 
   // Flechas: aviso en el borde, luego cruzan la pantalla en horizontal
   if (elapsed >= level.cfg.arrowStart && now >= nextArrowAt) spawnArrow(fighters, now, elapsed);
@@ -572,16 +588,25 @@ function update() {
       }
     }
 
-    // Caerse: quien cae más de fila y media por debajo de la última plataforma pisada queda eliminado
+    // Caerse: quien cae más de fila y media por debajo de la última plataforma pisada
+    // queda eliminado (en modo final, vuelve a su checkpoint)
     if (p.alive && !p.grounded && !p.finished && p.y - p.lastGroundY > FALL_LOSE) {
-      p.alive = false;
-      events.push({ k: 'fell', id: p.id, name: p.name });
+      if (finalMode) {
+        if (respawnAtCheckpoint(p)) events.push({ k: 'fall', id: p.id, name: p.name });
+      } else {
+        p.alive = false;
+        events.push({ k: 'fell', id: p.id, name: p.name });
+      }
     }
 
-    // Lava: elimina a quien se queda atrás
+    // Lava: elimina a quien se queda atrás (en modo final, vuelve a su checkpoint)
     if (p.alive && p.y + PLAYER_R >= currentLavaY) {
-      p.alive = false;
-      events.push({ k: 'lava', id: p.id, name: p.name });
+      if (finalMode) {
+        if (respawnAtCheckpoint(p)) events.push({ k: 'fall', id: p.id, name: p.name });
+      } else {
+        p.alive = false;
+        events.push({ k: 'lava', id: p.id, name: p.name });
+      }
     }
   }
   arrows = arrows.filter(a => !a.hit);
@@ -595,16 +620,12 @@ function update() {
     }
   }
 
-  // ¿Ya no queda nadie compitiendo?
+  // ¿Ya no queda nadie compitiendo? Ser el último superviviente no basta:
+  // para ganar siempre hay que derrotar al jefe.
   if (!winner) {
-    const inGame = [...players.values()].filter(p => p.inGame);
-    const remaining = inGame.filter(p => p.alive && !p.finished);
+    const remaining = [...players.values()].filter(p => p.inGame && p.alive && !p.finished);
     if (remaining.length === 0) {
       winner = null;
-      setPhase('ended');
-      events.push({ k: 'end', winner });
-    } else if (remaining.length === 1 && inGame.length > 1) {
-      winner = remaining[0].name;
       setPhase('ended');
       events.push({ k: 'end', winner });
     }
@@ -622,6 +643,7 @@ function snapshot() {
     cd: phase === 'countdown' ? Math.ceil((COUNTDOWN_MS - elapsed) / 1000) : 0,
     lv: Math.round(currentLavaY),
     w: winner,
+    fm: finalMode ? 1 : 0,
     p: [...players.values()].filter(p => p.joined).map(p => ({
       id: p.id,
       x: Math.round(p.x), y: Math.round(p.y),

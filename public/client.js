@@ -230,6 +230,15 @@ function handleEvent(ev) {
       ? `Empate ${ev.easy}-${ev.hard}: al azar sale ${name}`
       : `Pista ${name} (${ev.easy} fácil / ${ev.hard} difícil)`);
   }
+  // Modo final: quedan 2 y ya nadie puede quedar eliminado
+  if (ev.k === 'final') {
+    addFeedMsg(`¡Quedan ${ev.names.length}! Nadie más cae: todos al jefe`);
+    sfx.cp();
+  }
+  if (ev.k === 'fall') {
+    if (p) burst(p.x, p.y, '#29adff', 10);
+    if (ev.id === myId) { sfx.fall(); shakeUntil = performance.now() + 200; }
+  }
   // Jefe final
   if (ev.k === 'stomp') {
     const bs = curr.bs;
@@ -725,6 +734,13 @@ function drawOverlay(m) {
     const racing = curr.p.filter(p => p.ig && p.al && !p.fin).length;
     text(`SUBIENDO: ${racing}`, 8, 12, 8, '#fff1e8', 'left');
     text(`PISTA ${TRACK_NAMES[curr.tr] || ''}`, W - 8, 12, 8, TRACK_COLORS[curr.tr] || '#fff1e8', 'right');
+    // Último en pie en una partida de varios: aún tiene que vencer al jefe
+    const inGameCount = curr.p.filter(p => p.ig).length;
+    if (m && m.ig && m.al && !m.fin && racing === 1 && inGameCount > 1) {
+      text('¡ERES EL ÚLTIMO! DERROTA AL JEFE PARA GANAR', W / 2, H - 14, 7, blink ? '#ffec27' : '#fff1e8');
+    } else if (m && m.ig && m.al && !m.fin && curr.fm) {
+      text('MODO FINAL: SI CAES, VUELVES AL CHECKPOINT · ¡A POR EL JEFE!', W / 2, H - 14, 6, '#29adff');
+    }
     // Aviso al llegar cerca del jefe
     if (m && m.ig && m.al && !m.fin && m.y < finishY + 3 * rowH && curr.bs && curr.bs.al) {
       text(`¡SALTA ENCIMA DEL JEFE!  ${m.bh}/${curr.bs.n}`, W / 2, 30, 9, blink ? '#ffec27' : '#ff004d');
@@ -749,7 +765,7 @@ function drawOverlay(m) {
       text('¡HAS PERDIDO!', W / 2, 110, 20, '#ff004d');
       text(`LLEGASTE AL ${m.pct}% DE LA TORRE`, W / 2, 150, 10, '#ffec27');
     } else {
-      text('¡NADIE HA LLEGADO!', W / 2, 130, 18, '#ffec27');
+      text('¡NADIE DERROTÓ AL JEFE!', W / 2, 130, 16, '#ffec27');
     }
     text('VOLVIENDO A LA SALA...', W / 2, 240, 8, '#83769c');
   }
