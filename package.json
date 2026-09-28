@@ -1,10 +1,14 @@
 {
   "name": "8bits-battle",
   "version": "1.0.0",
-  "description": "Battle royale 8 bits para el aula por WebSockets",
+  "description": "Carrera vertical 8 bits multijugador por WebSockets",
   "main": "server.js",
   "scripts": {
+    "dev": "node dev.js",
     "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "ws": "^8.18.0"
