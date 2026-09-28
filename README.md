@@ -26,7 +26,7 @@ Cada `git push` a `main` redespliega Vercel y Render automáticamente.
 ## Cómo se juega
 1. Todos abren `https://bits-ashen.vercel.app` desde cualquier red, escriben su nombre y pulsan **¡A LUCHAR!**
 2. En la sala de espera cada jugador **vota la pista**: **FÁCIL** o **DIFÍCIL**. Gana la más votada; si hay empate (o nadie vota), se elige al azar.
-3. **Cualquier jugador** puede pulsar **EMPEZAR PARTIDA** cuando haya al menos 2. Al terminar se vuelve a la sala y se vota de nuevo.
+3. **Cualquier jugador** puede pulsar **EMPEZAR PARTIDA**. También se puede jugar **solo**: con un único jugador en la sala el botón pasa a ser **JUGAR SOLO**. Al terminar se vuelve a la sala y se vota de nuevo.
 
 ## Reglas
 - **Mover**: A / D o flechas. **Saltar**: W, flecha arriba o espacio. En móvil y tablet aparecen botones táctiles ◄ ► y ▲.

@@ -22,7 +22,19 @@ const WORLD_W = 480;
 const ROW_H = 46;
 const NUM_ROWS = 80;                 // filas a escalar
 const GROUND_Y = NUM_ROWS * ROW_H;   // suelo (salida)
-const FINISH_Y = 0;                  // cima (meta)
+const FINISH_Y = 0;                  // cima: suelo de la arena del jefe
+
+// ---------- Jefe final (en la cima) ----------
+// Gana quien le salte encima BOSS_HITS veces. El jefe lanza bolas de fuego:
+// si te dan (o lo tocas de lado) vuelves al último checkpoint.
+const BOSS_W = 28, BOSS_H = 24;      // caja de colisión (sprite 14x12 a escala 2)
+const BOSS_HITS = 3;                 // pisotones para derrotarlo
+const BOSS_HURT_MS = 700;            // tras un pisotón es invulnerable este tiempo
+const BOSS_FIRST_SHOT_MS = 1500;     // respiro antes del primer disparo al llegar alguien
+const BOSS_AWARE_Y = FINISH_Y + 3 * 46;  // dispara a quien esté por encima de esta altura
+const STOMP_BOUNCE = -9;             // rebote del jugador al pisarlo
+const FIREBALL_R = 4;
+const FIREBALL_LIFE = 4000;          // ms
 const PLAYER_R = 5;                  // caja de colisión (coincide con el sprite 10x10)
 
 // ---------- Física ----------
@@ -66,6 +78,10 @@ const TRACKS = {
     lavaDelay: 8000,                 // la lava empieza a subir 8s después de "¡YA!"
     lavaSpeed: 10,                   // px/s
     lavaAccel: 0.12,                 // px/s² (para que la partida siempre acabe)
+    bossSpeed: 1.1,                  // px/tick que camina el jefe
+    fireEvery: 1900,                 // ms entre disparos del jefe
+    fireSpeed: 2.6,                  // px/tick de cada bola de fuego
+    fireSpread: 1,                   // bolas por disparo (en abanico)
   },
   hard: {
     name: 'DIFÍCIL',
@@ -87,6 +103,10 @@ const TRACKS = {
     lavaDelay: 5000,
     lavaSpeed: 13,
     lavaAccel: 0.17,
+    bossSpeed: 1.8,
+    fireEvery: 1200,
+    fireSpeed: 3.2,
+    fireSpread: 3,
   },
 };
 
@@ -133,12 +153,15 @@ function buildLevel(seed, track) {
   add(0, GROUND_Y, WORLD_W, 'ground');
   let cursorX = WORLD_W / 2;
   let prevMainType = 'ground';
+  let cpCount = 0;
 
   for (let row = 1; row < NUM_ROWS; row++) {
     const y = GROUND_Y - row * ROW_H;
 
-    if (row % cfg.checkpointEvery === 0) {
-      add(0, y, WORLD_W, 'checkpoint', { cpIdx: row / cfg.checkpointEvery });
+    // Checkpoints cada N filas y siempre uno justo antes de la arena del jefe,
+    // para que las bolas de fuego no te manden demasiado lejos
+    if (row % cfg.checkpointEvery === 0 || row === NUM_ROWS - 2) {
+      add(0, y, WORLD_W, 'checkpoint', { cpIdx: ++cpCount });
       cursorX = WORLD_W / 2 + (rnd() * 2 - 1) * 40;
       prevMainType = 'checkpoint';
       continue;
@@ -189,12 +212,11 @@ function buildLevel(seed, track) {
     }
   }
 
-  add(0, FINISH_Y, WORLD_W, 'finish');
+  add(0, FINISH_Y, WORLD_W, 'arena');   // suelo de la arena del jefe
 
   const byId = new Map(platforms.map(p => [p.id, p]));
   return {
     seed, track, cfg, platforms, byId,
-    finish: platforms.find(p => p.type === 'finish'),
     totalCp: platforms.filter(p => p.type === 'checkpoint').length,
   };
 }
@@ -214,6 +236,8 @@ let currentLavaY = GROUND_Y + 40;
 let nextId = 1;
 let colorIdx = 0;
 let arrows = [];
+let boss = null;
+let fireballs = [];
 let nextArrowAt = 0;
 let arrowSeq = 0;
 
@@ -280,9 +304,85 @@ function spawnArrow(fighters, now, elapsed) {
   nextArrowAt = now + arrowEveryMax - (arrowEveryMax - arrowEveryMin) * progress;
 }
 
+// ---------- Jefe ----------
+function makeBoss() {
+  return { x: WORLD_W / 2, dir: 1, alive: true, hurtUntil: 0, nextShotAt: 0, shotAt: 0 };
+}
+
+function burnPlayer(p) {
+  if (respawnAtCheckpoint(p)) events.push({ k: 'burn', id: p.id, name: p.name });
+}
+
+function declareWinner(p) {
+  p.finished = true;
+  p.vx = 0; p.vy = 0;
+  if (!winner) {
+    winner = p.name;
+    setPhase('ended');
+    events.push({ k: 'end', winner });
+  }
+}
+
+// Camina de lado a lado por la arena y dispara bolas de fuego a quien se acerca
+function updateBoss(fighters, now) {
+  if (!boss || !boss.alive) return;
+  const cfg = level.cfg;
+  const minX = BOSS_W / 2 + 12, maxX = WORLD_W - BOSS_W / 2 - 12;
+  boss.x += boss.dir * cfg.bossSpeed;
+  if (boss.x <= minX) { boss.x = minX; boss.dir = 1; }
+  if (boss.x >= maxX) { boss.x = maxX; boss.dir = -1; }
+  if (Math.random() < 0.006) boss.dir *= -1;   // cambia de sentido de vez en cuando
+
+  const near = fighters.filter(p => p.y < BOSS_AWARE_Y);
+  if (!near.length) { boss.nextShotAt = 0; return; }
+  if (!boss.nextShotAt) { boss.nextShotAt = now + BOSS_FIRST_SHOT_MS; return; }
+  if (now < boss.nextShotAt) return;
+
+  // Apunta al jugador más cercano; con fireSpread > 1 dispara en abanico
+  const cx = boss.x, cy = FINISH_Y - BOSS_H / 2;
+  const target = near.reduce((a, b) => Math.hypot(a.x - cx, a.y - cy) < Math.hypot(b.x - cx, b.y - cy) ? a : b);
+  const base = Math.atan2(target.y - cy, target.x - cx);
+  for (let k = 0; k < cfg.fireSpread; k++) {
+    const ang = base + (k - (cfg.fireSpread - 1) / 2) * 0.3;
+    fireballs.push({ x: cx, y: cy, vx: Math.cos(ang) * cfg.fireSpeed, vy: Math.sin(ang) * cfg.fireSpeed, until: now + FIREBALL_LIFE });
+  }
+  boss.dir = target.x < cx ? -1 : 1;
+  boss.shotAt = now;
+  boss.nextShotAt = now + cfg.fireEvery;
+  events.push({ k: 'fire' });
+}
+
+// Pisotón desde arriba = golpe al jefe; tocarlo de lado = te quemas
+function bossContact(p, prevY, now) {
+  if (!boss || !boss.alive) return;
+  const top = FINISH_Y - BOSS_H;
+  const overlapX = Math.abs(p.x - boss.x) < BOSS_W / 2 + PLAYER_R;
+  const overlapY = p.y + PLAYER_R > top && p.y - PLAYER_R < FINISH_Y;
+  if (!overlapX || !overlapY) return;
+
+  if (p.vy > 0 && prevY + PLAYER_R <= top + 6) {
+    p.vy = STOMP_BOUNCE;
+    p.grounded = false;
+    p.standingOn = null;
+    if (now < boss.hurtUntil) return;   // ya estaba aturdido: solo rebotas
+    boss.hurtUntil = now + BOSS_HURT_MS;
+    p.bossHits = (p.bossHits || 0) + 1;
+    events.push({ k: 'stomp', id: p.id, name: p.name, hits: p.bossHits });
+    if (p.bossHits >= BOSS_HITS) {
+      boss.alive = false;
+      fireballs = [];
+      events.push({ k: 'bossdie', id: p.id, name: p.name, x: boss.x, y: FINISH_Y - BOSS_H / 2 });
+      declareWinner(p);
+    }
+  } else if (now >= (p.invulnUntil || 0) && now >= boss.hurtUntil) {
+    burnPlayer(p);
+  }
+}
+
 function startCountdown() {
   const joined = [...players.values()].filter(p => p.joined);
-  if (joined.length < 2 || phase !== 'lobby') return;
+  // Basta con 1 jugador: se puede jugar solo contra la torre
+  if (joined.length < 1 || phase !== 'lobby') return;
   // Sin ningún voto no hay pista elegida: no se puede empezar
   const cast = tallyVotes();
   if (cast.easy + cast.hard === 0) return;
@@ -294,6 +394,8 @@ function startCountdown() {
   currentLavaY = GROUND_Y + 40;
   arrows = [];
   nextArrowAt = 0;
+  boss = makeBoss();
+  fireballs = [];
 
   joined.forEach((p, i) => {
     const gridX = 40 + (i % 10) * ((WORLD_W - 80) / 9);
@@ -302,7 +404,7 @@ function startCountdown() {
       vx: 0, vy: 0, grounded: true, standingOn: null,
       alive: true, inGame: true, finished: false,
       checkpoint: { x: WORLD_W / 2, y: GROUND_Y, row: 0, idx: 0 },
-      lastGroundY: GROUND_Y, knock: 0, jumpBuf: 0, coyote: 0,
+      lastGroundY: GROUND_Y, knock: 0, jumpBuf: 0, coyote: 0, bossHits: 0,
       invulnUntil: 0, input: { l: false, r: false, jump: false }, prevJump: false,
     });
   });
@@ -321,6 +423,7 @@ function backToLobby() {
   winner = null;
   currentLavaY = GROUND_Y + 40;
   arrows = [];
+  fireballs = [];
   // Cada ronda empieza con una votación nueva
   for (const p of players.values()) { p.inGame = false; p.alive = true; p.finished = false; p.vote = null; }
   setPhase('lobby');
@@ -351,6 +454,11 @@ function update() {
   if (elapsed >= level.cfg.arrowStart && now >= nextArrowAt) spawnArrow(fighters, now, elapsed);
   for (const a of arrows) if (now >= a.fireAt) a.x += a.dir * ARROW_SPEED;
   arrows = arrows.filter(a => a.x >= -20 && a.x <= WORLD_W + 20);
+
+  // Jefe y sus bolas de fuego
+  updateBoss(fighters, now);
+  for (const f of fireballs) { f.x += f.vx; f.y += f.vy; }
+  fireballs = fireballs.filter(f => now < f.until && f.x > -10 && f.x < WORLD_W + 10 && f.y < FINISH_Y + 300);
 
   for (const p of fighters) {
     // Tras un flechazo el jugador sale despedido y pierde el control un momento
@@ -395,7 +503,7 @@ function update() {
     p.standingOn = null;
     if (p.vy >= 0) {
       for (const plat of level.platforms) {
-        if (plat.broken || plat.type === 'spike' || plat.type === 'finish') continue;
+        if (plat.broken || plat.type === 'spike') continue;
         const px = plat.type === 'move' ? movingX(plat, elapsed) : plat.x;
         if (p.x + PLAYER_R < px || p.x - PLAYER_R > px + plat.w) continue;
         const feetPrev = prevY + PLAYER_R, feetNow = p.y + PLAYER_R;
@@ -450,16 +558,17 @@ function update() {
       }
     }
 
-    // Meta
-    if (!p.finished && p.y - PLAYER_R <= level.finish.y + 6) {
-      p.finished = true;
-      p.grounded = true;
-      p.vx = 0; p.vy = 0;
-      events.push({ k: 'finish', id: p.id, name: p.name });
-      if (!winner) {
-        winner = p.name;
-        setPhase('ended');
-        events.push({ k: 'end', winner });
+    // Jefe: pisotón o quemadura por contacto
+    bossContact(p, prevY, now);
+
+    // Bolas de fuego del jefe
+    if (!p.finished && now >= (p.invulnUntil || 0)) {
+      for (const f of fireballs) {
+        if (!f.hit && Math.hypot(f.x - p.x, f.y - p.y) < PLAYER_R + FIREBALL_R) {
+          f.hit = true;
+          burnPlayer(p);
+          break;
+        }
       }
     }
 
@@ -476,6 +585,7 @@ function update() {
     }
   }
   arrows = arrows.filter(a => !a.hit);
+  fireballs = fireballs.filter(f => !f.hit);
 
   // Plataformas "break" que ya han cumplido su temporizador
   for (const plat of level.platforms) {
@@ -517,6 +627,7 @@ function snapshot() {
       x: Math.round(p.x), y: Math.round(p.y),
       al: p.alive, ig: p.inGame, fin: !!p.finished, vo: p.vote,
       cp: p.checkpoint ? p.checkpoint.idx : 0,
+      bh: p.bossHits || 0,
       pct: p.finished ? 100 : (level ? Math.max(0, Math.min(100, Math.round((GROUND_Y - p.y) / (GROUND_Y - FINISH_Y) * 100))) : 0),
     })),
     brk: level ? level.platforms.filter(pl => pl.broken).map(pl => pl.id) : [],
@@ -527,6 +638,12 @@ function snapshot() {
     mv: level
       ? level.platforms.filter(pl => pl.type === 'move').map(pl => [pl.id, Math.round(movingX(pl, elapsed))])
       : [],
+    // Jefe: posición, sentido, vivo, aturdido (parpadea), disparando (boca encendida)
+    bs: level && boss && phase !== 'lobby'
+      ? { x: Math.round(boss.x), d: boss.dir, al: boss.alive, h: now < boss.hurtUntil ? 1 : 0, sh: now - boss.shotAt < 250 ? 1 : 0, n: BOSS_HITS }
+      : null,
+    // Bolas de fuego: [x, y, vx, vy] por tick, para extrapolar como las flechas
+    fb: phase === 'playing' ? fireballs.map(f => [Math.round(f.x), Math.round(f.y), +f.vx.toFixed(2), +f.vy.toFixed(2)]) : [],
     e: events,
   });
 }
@@ -565,7 +682,7 @@ wss.on('connection', ws => {
   ws.send(JSON.stringify({
     t: 'welcome', id: p.id, maxPlayers: MAX_PLAYERS,
     worldW: WORLD_W, groundY: GROUND_Y, finishY: FINISH_Y, rowH: ROW_H,
-    totalCp: level ? level.totalCp : Math.floor((NUM_ROWS - 1) / TRACKS.easy.checkpointEvery),
+    totalCp: level ? level.totalCp : Math.floor((NUM_ROWS - 1) / TRACKS.easy.checkpointEvery) + 1,
     level: level ? level.platforms.map(({ id, x, y, w, type }) => ({ id, x, y, w, type })) : null,
     track: level ? level.track : null,
   }));

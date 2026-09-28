@@ -61,6 +61,9 @@ const sfx = {
   count: () => beep(523, 0.12),
   go: () => beep(1046, 0.3),
   win: () => [523, 659, 784, 1046, 784, 1046].forEach((f, i) => beep(f, 0.14, { delay: i * 0.12 })),
+  stomp: () => [220, 440].forEach((f, i) => beep(f, 0.08, { delay: i * 0.05, vol: 0.09, slide: 200 })),
+  burn: () => beep(200, 0.25, { type: 'sawtooth', vol: 0.07, slide: -150 }),
+  fire: () => beep(120, 0.15, { type: 'sawtooth', vol: 0.04, slide: 300 }),
   lose: () => [392, 330, 262, 196].forEach((f, i) => beep(f, 0.2, { delay: i * 0.18, type: 'triangle', vol: 0.1 })),
 };
 
@@ -227,9 +230,30 @@ function handleEvent(ev) {
       ? `Empate ${ev.easy}-${ev.hard}: al azar sale ${name}`
       : `Pista ${name} (${ev.easy} fácil / ${ev.hard} difícil)`);
   }
-  if (ev.k === 'finish') {
+  // Jefe final
+  if (ev.k === 'stomp') {
+    const bs = curr.bs;
+    if (bs) burst(bs.x, finishY - 24, '#ffec27', 12, 2.2);
+    sfx.stomp();
+    addFeedMsg(`${ev.name} pisó al jefe (${ev.hits}/${bs ? bs.n : 3})`);
+    if (ev.id === myId) shakeUntil = performance.now() + 150;
+  }
+  if (ev.k === 'burn') {
+    if (p) burst(p.x, p.y, '#ffa300', 14, 2.2);
+    sfx.burn();
+    addFeedMsg(`${ev.name} se quemó con el jefe`);
+    if (ev.id === myId) shakeUntil = performance.now() + 250;
+  }
+  if (ev.k === 'fire') {
+    const m = me();
+    if (m && m.ig && m.y < finishY + 200) sfx.fire();
+  }
+  if (ev.k === 'bossdie') {
+    burst(ev.x, ev.y, '#ff004d', 30, 3);
+    burst(ev.x, ev.y, '#ffec27', 20, 2.5);
     sfx.finish();
-    addFeedMsg(`${ev.name} ¡llegó a la cima!`);
+    addFeedMsg(`¡${ev.name} derrotó al jefe!`);
+    shakeUntil = performance.now() + 400;
   }
   if (ev.k === 'end') {
     const m = me();
@@ -258,7 +282,7 @@ function updateHud() {
   const inGame = m && m.ig;
   $('#hudPct').textContent = inGame ? `${m.pct}%` : '-';
   $('#hudCp').textContent = inGame ? `${m.cp}/${totalCp}` : '-';
-  $('#hudStatus').textContent = inGame ? (m.fin ? '¡EN LA CIMA!' : (m.al ? '' : 'ELIMINADO')) : '';
+  $('#hudStatus').textContent = inGame ? (m.fin ? '¡JEFE DERROTADO!' : (m.al ? '' : 'ELIMINADO')) : '';
 }
 
 function updateSide() {
@@ -286,7 +310,7 @@ function updateSide() {
     const info = document.createElement('span');
     info.textContent = !playing ? (TRACK_NAMES[p.vo] || 'SIN VOTO')
       : !p.ig ? 'ESPERA'
-      : p.fin ? 'CIMA' : !p.al ? 'FUERA' : `${p.pct}%`;
+      : p.fin ? 'GANÓ' : !p.al ? 'FUERA' : p.bh ? `JEFE ${p.bh}/3` : `${p.pct}%`;
     li.append(name, info);
     ul.appendChild(li);
   }
@@ -295,10 +319,10 @@ function updateSide() {
   const lobby = curr.ph === 'lobby';
   const m = me();
   const noVotes = !curr.vt || curr.vt.easy + curr.vt.hard === 0;
-  $('#btnStart').disabled = !lobby || curr.p.length < 2 || noVotes;
+  $('#btnStart').disabled = !lobby || curr.p.length < 1 || noVotes;
   $('#btnStart').textContent = !lobby ? 'PARTIDA EN CURSO'
-    : curr.p.length < 2 ? 'FALTAN JUGADORES'
-    : noVotes ? 'VOTA UNA PISTA' : 'EMPEZAR PARTIDA';
+    : noVotes ? 'VOTA UNA PISTA'
+    : curr.p.length === 1 ? 'JUGAR SOLO' : 'EMPEZAR PARTIDA';
   for (const b of document.querySelectorAll('#trackPick button')) {
     const t = b.dataset.track;
     b.classList.toggle('on', lobby ? !!m && m.vo === t : curr.tr === t);
@@ -429,9 +453,20 @@ function drawPlatform(p, sy) {
     ctx.fillStyle = '#00b3a4'; ctx.fillRect(px, sy, w, 6);
     ctx.fillStyle = '#00e436'; ctx.fillRect(px, sy, w, 2);
     for (let x = 6; x < w; x += 24) { ctx.fillStyle = '#fff1e8'; ctx.fillRect(px + x, sy - 8, 2, 8); ctx.fillStyle = '#00e436'; ctx.fillRect(px + x + 2, sy - 8, 6, 4); }
-  } else if (p.type === 'finish') {
-    ctx.fillStyle = '#ffec27'; ctx.fillRect(px, sy, w, 8);
-    for (let x = 0; x < w; x += 12) { ctx.fillStyle = (x / 12) % 2 ? '#000' : '#fff1e8'; ctx.fillRect(px + x, sy, 12, 4); }
+  } else if (p.type === 'arena') {
+    // Suelo de piedra de la arena del jefe, con dos columnas y antorchas a los lados
+    ctx.fillStyle = '#3a332e'; ctx.fillRect(px, sy, w, 14);
+    ctx.fillStyle = '#c2c3c7'; ctx.fillRect(px, sy, w, 2);
+    ctx.fillStyle = '#5f574f';
+    for (let x = 0; x < w; x += 16) { ctx.fillRect(px + x, sy + 2, 1, 6); ctx.fillRect(px + x + 8, sy + 8, 1, 6); }
+    ctx.fillRect(px, sy + 8, w, 1);
+    const flick = Math.floor(performance.now() / 120) % 2;
+    for (const cx of [px + 6, px + w - 14]) {
+      ctx.fillStyle = '#5f574f'; ctx.fillRect(cx, sy - 60, 8, 60);
+      ctx.fillStyle = '#3a332e'; ctx.fillRect(cx + 6, sy - 60, 2, 60);
+      ctx.fillStyle = '#ffa300'; ctx.fillRect(cx + 1, sy - 68 - flick, 6, 8);
+      ctx.fillStyle = '#ffec27'; ctx.fillRect(cx + 3, sy - 66 - flick, 2, 4);
+    }
   } else if (p.type === 'break') {
     ctx.fillStyle = '#ffa300';
     ctx.fillRect(px, sy, w, 6);
@@ -476,6 +511,64 @@ function drawDeco(kind, now) {
 }
 
 // Flecha pixel-art de 14 px apuntando en "dir"; antes de dispararse, un "!" parpadeante en el borde
+// Jefe 14x12 dibujado a escala 2 (28x24): h cuernos, X cuerpo, w ojo, e pupila,
+// m boca, t dientes, o patas
+const BOSS_SPRITE = [
+  'h............h',
+  'hh..........hh',
+  '.hXXXXXXXXXXh.',
+  '.XXXXXXXXXXXX.',
+  'XXXwwXXXXwwXXX',
+  'XXXweXXXXewXXX',
+  'XXXXXXXXXXXXXX',
+  'XXmmmmmmmmmmXX',
+  'XXmtmtmtmtmtXX',
+  '.XXXXXXXXXXXX.',
+  '.XXX.XXXX.XXX.',
+  '.oo...oo...oo.',
+];
+const BOSS_COLORS = { easy: '#7e2553', hard: '#ab5236' };
+
+function drawBoss(now) {
+  const bs = curr.bs;
+  if (!bs || !bs.al) return;
+  if (finishY < camY - 60 || finishY - 40 > camY + H) return;
+  const ox = Math.round(bs.x) - 14, oy = finishY - 24;
+  const flash = bs.h && Math.floor(now / 70) % 2;          // parpadea al recibir un pisotón
+  const bob = bs.h ? 0 : Math.floor(now / 200) % 2;         // pequeño balanceo al andar
+  for (let j = 0; j < 12; j++) {
+    for (let i = 0; i < 14; i++) {
+      const ch = BOSS_SPRITE[j][bs.d < 0 ? 13 - i : i];
+      if (ch === '.') continue;
+      ctx.fillStyle = flash ? '#fff1e8'
+        : ch === 'X' ? (BOSS_COLORS[track] || BOSS_COLORS.easy)
+        : ch === 'h' ? '#fff1e8' : ch === 'w' ? '#fff' : ch === 'e' ? '#ff004d'
+        : ch === 'm' ? (bs.sh ? '#ffa300' : '#000') : ch === 't' ? '#fff' : '#000';
+      ctx.fillRect(ox + i * 2, oy + j * 2 - bob, 2, 2);
+    }
+  }
+  // Vida que me queda por quitarle: 3 corazones menos mis pisotones
+  const m = me();
+  const left = bs.n - (m && m.ig ? m.bh : 0);
+  for (let k = 0; k < bs.n; k++) {
+    ctx.fillStyle = k < left ? '#ff004d' : '#5f574f';
+    ctx.fillRect(Math.round(bs.x) - bs.n * 4 + k * 8 + 1, oy - 10, 6, 5);
+  }
+}
+
+// Bolas de fuego con parpadeo, extrapoladas entre snapshots
+function drawFireballs(now) {
+  if (!curr.fb) return;
+  const ticks = (now - currT) / (1000 / 30);
+  const flick = Math.floor(now / 90) % 2;
+  for (const [fx, fy, vx, vy] of curr.fb) {
+    const x = Math.round(fx + vx * ticks), y = Math.round(fy + vy * ticks);
+    ctx.fillStyle = '#ff004d'; ctx.fillRect(x - 4, y - 3, 8, 6); ctx.fillRect(x - 3, y - 4, 6, 8);
+    ctx.fillStyle = flick ? '#ffa300' : '#ffec27'; ctx.fillRect(x - 2, y - 2, 4, 4);
+    ctx.fillStyle = 'rgba(255,163,0,0.5)'; ctx.fillRect(x - Math.sign(vx) * 7 - 1, y - Math.sign(vy) * 5 - 1, 3, 3);
+  }
+}
+
 function drawArrows(now) {
   if (!curr.ar) return;
   const ticks = (now - currT) / (1000 / 30);
@@ -568,8 +661,10 @@ function render() {
     }
   }
 
-  // Flechas
+  // Flechas, jefe y bolas de fuego
   drawArrows(now);
+  drawBoss(now);
+  drawFireballs(now);
 
   // Partículas
   particles = particles.filter(pt => {
@@ -612,12 +707,13 @@ function drawOverlay(m) {
     const vt = curr.vt || { easy: 0, hard: 0 };
     text(`VOTOS  FÁCIL ${vt.easy}`, W / 2 - 8, 162, 9, TRACK_COLORS.easy, 'right');
     text(`DIFÍCIL ${vt.hard}`, W / 2 + 8, 162, 9, TRACK_COLORS.hard, 'left');
-    if (curr.p.length < 2) {
-      if (blink) text('ESPERANDO A MÁS JUGADORES...', W / 2, 190, 8, '#00e436');
+    if (curr.p.length === 1) {
+      text('VOTA UNA PISTA Y PULSA "JUGAR SOLO"', W / 2, 185, 8, '#00e436');
+      if (blink) text('O ESPERA A QUE ENTREN MÁS JUGADORES', W / 2, 200, 7, '#29adff');
     } else {
       text('VOTA LA PISTA Y PULSA "EMPEZAR PARTIDA"', W / 2, 190, 8, '#00e436');
     }
-    text('SALTA DE PLATAFORMA EN PLATAFORMA · ¡EL PRIMERO EN LLEGAR ARRIBA GANA!', W / 2, 230, 6, '#83769c');
+    text('SUBE LA TORRE Y DERROTA AL JEFE: ¡SÁLTALE ENCIMA 3 VECES!', W / 2, 230, 6, '#83769c');
     text(`HASTA ${maxPlayers} JUGADORES · LA LAVA SUBE · SI TE CAES, PIERDES`, W / 2, 245, 6, '#83769c');
     text('¡CUIDADO CON LAS FLECHAS QUE SALEN DE LOS LADOS!', W / 2, 260, 6, '#83769c');
   } else if (ph === 'countdown') {
@@ -629,8 +725,13 @@ function drawOverlay(m) {
     const racing = curr.p.filter(p => p.ig && p.al && !p.fin).length;
     text(`SUBIENDO: ${racing}`, 8, 12, 8, '#fff1e8', 'left');
     text(`PISTA ${TRACK_NAMES[curr.tr] || ''}`, W - 8, 12, 8, TRACK_COLORS[curr.tr] || '#fff1e8', 'right');
+    // Aviso al llegar cerca del jefe
+    if (m && m.ig && m.al && !m.fin && m.y < finishY + 3 * rowH && curr.bs && curr.bs.al) {
+      text(`¡SALTA ENCIMA DEL JEFE!  ${m.bh}/${curr.bs.n}`, W / 2, 30, 9, blink ? '#ffec27' : '#ff004d');
+      text('ESQUIVA SUS BOLAS DE FUEGO', W / 2, 44, 6, '#fff1e8');
+    }
     if (m && m.ig && m.fin) {
-      text('¡HAS LLEGADO A LA CIMA!', W / 2, H / 2, 14, '#ffec27');
+      text('¡HAS DERROTADO AL JEFE!', W / 2, H / 2, 14, '#ffec27');
     } else if (m && m.ig && !m.al) {
       text(myDeath === 'fell' ? '¡TE HAS CAÍDO!' : 'TE HA ALCANZADO LA LAVA', W / 2, H / 2 - 10, 14, '#ff004d');
       text('MIRANDO LA PARTIDA...', W / 2, H / 2 + 20, 8, '#fff1e8');
@@ -643,6 +744,10 @@ function drawOverlay(m) {
       const won = m && m.n === curr.w;
       text(won ? '¡HAS GANADO!' : 'GANADOR', W / 2, 110, won ? 24 : 16, '#ffec27');
       text(curr.w, W / 2, 160, 24, blink ? '#00e436' : '#fff1e8');
+    } else if (m && m.ig && curr.p.filter(p => p.ig).length === 1) {
+      // Partida en solitario: se muestra hasta dónde llegó
+      text('¡HAS PERDIDO!', W / 2, 110, 20, '#ff004d');
+      text(`LLEGASTE AL ${m.pct}% DE LA TORRE`, W / 2, 150, 10, '#ffec27');
     } else {
       text('¡NADIE HA LLEGADO!', W / 2, 130, 18, '#ffec27');
     }
