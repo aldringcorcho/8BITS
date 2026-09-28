@@ -21,12 +21,12 @@ const END_SCREEN_MS = 8000;
 // ---------- Mundo / torre ----------
 const WORLD_W = 480;
 const ROW_H = 46;
-const NUM_ROWS = 60;                 // filas a escalar
-const CHECKPOINT_EVERY = 8;          // una plataforma segura de ancho completo cada N filas
+const NUM_ROWS = 80;                 // filas a escalar
+const CHECKPOINT_EVERY = 10;         // una plataforma segura de ancho completo cada N filas
 const GROUND_Y = NUM_ROWS * ROW_H;   // suelo (salida)
 const FINISH_Y = 0;                  // cima (meta)
 const PLAYER_R = 5;                  // caja de colisión (coincide con el sprite 10x10)
-const MAX_JUMP_DX = 80;              // desplazamiento horizontal máx. garantizado entre filas
+const MAX_JUMP_DX = 90;             // desplazamiento horizontal máx. garantizado entre filas
 
 // ---------- Física ----------
 const GRAVITY = 0.6;
@@ -34,14 +34,24 @@ const JUMP_VY = -11.5;
 const MOVE_ACCEL = 0.7;
 const MAX_VX = 3.0;
 const FRICTION = 0.85;
-const BREAK_DELAY = 380;             // ms hasta que una plataforma "break" se desmorona
-const FALL_TRIGGER = 70;             // px por debajo del checkpoint que provocan teleporte
+const BREAK_DELAY = 280;            // ms hasta que una plataforma "break" se desmorona
+const FALL_LOSE = ROW_H * 1.5;       // caer más de fila y media por debajo de la última plataforma = eliminado
 const RESPAWN_INVULN = 800;          // ms de invulnerabilidad tras reaparecer
 
+// ---------- Flechas (salen de los lados) ----------
+const ARROW_START = 3000;           // ms tras "¡YA!" antes de la primera flecha
+const ARROW_EVERY_MAX = 1600;        // ms entre flechas al principio...
+const ARROW_EVERY_MIN = 650;         // ...y al final (cada vez más seguidas)
+const ARROW_WARN = 700;              // ms de aviso "!" en el borde antes de disparar
+const ARROW_SPEED = 4;               // px por tick
+const ARROW_KNOCK_VX = 6;            // empujón horizontal al recibir una flecha
+const ARROW_KNOCK_VY = -4;
+const ARROW_KNOCK_TICKS = 12;        // ticks sin control tras el impacto
+
 // ---------- Lava ----------
-const LAVA_DELAY = 30000;            // empieza a subir 30s después de "¡YA!"
-const LAVA_SPEED = 12;               // px/s
-const LAVA_ACCEL = 0.15;             // px/s² (para que la partida siempre acabe)
+const LAVA_DELAY = 4000;             // empieza a subir 4s después de "¡YA!"
+const LAVA_SPEED = 16;               // px/s
+const LAVA_ACCEL = 0.2;            // px/s² (para que la partida siempre acabe)
 
 // Paleta 8 bits para hasta 20 jugadores
 const COLORS = [
@@ -83,6 +93,7 @@ function buildLevel(seed) {
 
   add(0, GROUND_Y, WORLD_W, 'ground');
   let cursorX = WORLD_W / 2;
+  let prevMainType = 'ground';
 
   for (let row = 1; row < NUM_ROWS; row++) {
     const y = GROUND_Y - row * ROW_H;
@@ -90,25 +101,32 @@ function buildLevel(seed) {
     if (row % CHECKPOINT_EVERY === 0) {
       add(0, y, WORLD_W, 'checkpoint', { cpIdx: row / CHECKPOINT_EVERY });
       cursorX = WORLD_W / 2 + (rnd() * 2 - 1) * 40;
+      prevMainType = 'checkpoint';
       continue;
     }
 
     // Plataforma principal: garantiza que siempre hay un camino posible
-    const w = 44 + rnd() * 26;
+    const w = 32 + rnd() * 20;
     cursorX += (rnd() * 2 - 1) * MAX_JUMP_DX;
     cursorX = Math.max(w / 2 + 8, Math.min(WORLD_W - w / 2 - 8, cursorX));
-    const mainType = pick(rnd, ['normal', 'normal', 'normal', 'move', 'break']);
+    // Tras una "break" no hay tiempo de esperar a que una "move" se acerque: evitamos esa combinación imposible
+    const mainPool = prevMainType === 'break'
+      ? ['normal', 'normal', 'break']
+      : ['normal', 'normal', 'move', 'move', 'break', 'break'];
+    const mainType = pick(rnd, mainPool);
     add(cursorX - w / 2, y, w, mainType,
-      mainType === 'move' ? { baseX: cursorX - w / 2, amp: 18 + rnd() * 22, freq: 0.0015 + rnd() * 0.0015, phase: rnd() * Math.PI * 2 } : {});
+      mainType === 'move' ? { baseX: cursorX - w / 2, amp: 22 + rnd() * 24, freq: 0.002 + rnd() * 0.002, phase: rnd() * Math.PI * 2 } : {});
+    prevMainType = mainType;
 
-    // Plataforma extra opcional: variedad y algo de riesgo, nunca es el único camino
-    if (rnd() < 0.55) {
-      const ew = 36 + rnd() * 24;
+    // Plataformas extra (hasta 2): variedad y trampas, nunca son el único camino
+    const extras = rnd() < 0.8 ? (rnd() < 0.45 ? 2 : 1) : 0;
+    for (let k = 0; k < extras; k++) {
+      const ew = 30 + rnd() * 24;
       let ex = rnd() * (WORLD_W - ew);
       if (Math.abs((ex + ew / 2) - cursorX) < (ew + w) / 2 + 6) ex = (ex + WORLD_W / 2) % (WORLD_W - ew);
-      const extraType = pick(rnd, ['normal', 'move', 'break', 'spike']);
+      const extraType = pick(rnd, ['normal', 'move', 'break', 'spike', 'spike']);
       add(ex, y, ew, extraType,
-        extraType === 'move' ? { baseX: ex, amp: 16 + rnd() * 20, freq: 0.0015 + rnd() * 0.0015, phase: rnd() * Math.PI * 2 } : {});
+        extraType === 'move' ? { baseX: ex, amp: 16 + rnd() * 24, freq: 0.002 + rnd() * 0.002, phase: rnd() * Math.PI * 2 } : {});
     }
   }
 
@@ -136,6 +154,9 @@ let winner = null;
 let currentLavaY = GROUND_Y + 40;
 let nextId = 1;
 let colorIdx = 0;
+let arrows = [];
+let nextArrowAt = 0;
+let arrowSeq = 0;
 
 function setPhase(p) { phase = p; phaseStart = Date.now(); }
 
@@ -162,8 +183,26 @@ function respawnAtCheckpoint(p) {
   p.vx = 0; p.vy = 0;
   p.grounded = true;
   p.standingOn = null;
+  p.lastGroundY = p.checkpoint.y;
+  p.knock = 0;
   p.invulnUntil = Date.now() + RESPAWN_INVULN;
   return true;
+}
+
+function spawnArrow(fighters, now, elapsed) {
+  const targets = fighters.filter(p => p.y + PLAYER_R < currentLavaY - 20);
+  if (!targets.length) return;
+  const t = pick(Math.random, targets);
+  const dir = Math.random() < 0.5 ? 1 : -1;   // 1 = sale por la izquierda hacia la derecha
+  arrows.push({
+    id: arrowSeq++,
+    x: dir === 1 ? 0 : WORLD_W,
+    y: t.y + (Math.random() * 30 - 20),
+    dir,
+    fireAt: now + ARROW_WARN,
+  });
+  const progress = Math.min(1, elapsed / 120000);
+  nextArrowAt = now + ARROW_EVERY_MAX - (ARROW_EVERY_MAX - ARROW_EVERY_MIN) * progress;
 }
 
 function startCountdown() {
@@ -173,6 +212,8 @@ function startCountdown() {
   level = buildLevel(Date.now() ^ Math.floor(Math.random() * 1e9));
   winner = null;
   currentLavaY = GROUND_Y + 40;
+  arrows = [];
+  nextArrowAt = 0;
 
   joined.forEach((p, i) => {
     const gridX = 40 + (i % 10) * ((WORLD_W - 80) / 9);
@@ -181,6 +222,7 @@ function startCountdown() {
       vx: 0, vy: 0, grounded: true, standingOn: null,
       alive: true, inGame: true, finished: false,
       checkpoint: { x: WORLD_W / 2, y: GROUND_Y, row: 0, idx: 0 },
+      lastGroundY: GROUND_Y, knock: 0, deathBy: null,
       invulnUntil: 0, input: { l: false, r: false, jump: false }, prevJump: false,
     });
   });
@@ -198,6 +240,7 @@ function startCountdown() {
 function backToLobby() {
   winner = null;
   currentLavaY = GROUND_Y + 40;
+  arrows = [];
   for (const p of players.values()) { p.inGame = false; p.alive = true; p.finished = false; }
   setPhase('lobby');
 }
@@ -215,17 +258,27 @@ function update() {
   const t = elapsed - LAVA_DELAY;
   if (t > 0) {
     const sec = t / 1000;
-    currentLavaY = GROUND_Y - (LAVA_SPEED * sec + 0.5 * LAVA_ACCEL * sec * sec);
+    currentLavaY = GROUND_Y + 40 - (LAVA_SPEED * sec + 0.5 * LAVA_ACCEL * sec * sec);
   } else {
     currentLavaY = GROUND_Y + 40;
   }
 
   const fighters = [...players.values()].filter(p => p.inGame && p.alive && !p.finished);
 
+  // Flechas: aviso en el borde, luego cruzan la pantalla en horizontal
+  if (elapsed >= ARROW_START && now >= nextArrowAt) spawnArrow(fighters, now, elapsed);
+  for (const a of arrows) if (now >= a.fireAt) a.x += a.dir * ARROW_SPEED;
+  arrows = arrows.filter(a => a.x >= -20 && a.x <= WORLD_W + 20);
+
   for (const p of fighters) {
-    const dir = (p.input.r ? 1 : 0) - (p.input.l ? 1 : 0);
-    if (dir) p.vx += dir * MOVE_ACCEL; else p.vx *= FRICTION;
-    p.vx = Math.max(-MAX_VX, Math.min(MAX_VX, p.vx));
+    // Tras un flechazo el jugador sale despedido y pierde el control un momento
+    if (p.knock > 0) {
+      p.knock--;
+    } else {
+      const dir = (p.input.r ? 1 : 0) - (p.input.l ? 1 : 0);
+      if (dir) p.vx += dir * MOVE_ACCEL; else p.vx *= FRICTION;
+      p.vx = Math.max(-MAX_VX, Math.min(MAX_VX, p.vx));
+    }
 
     if (p.input.jump && !p.prevJump && p.grounded) {
       p.vy = JUMP_VY;
@@ -260,6 +313,7 @@ function update() {
           p.vy = 0;
           p.grounded = true;
           p.standingOn = plat.id;
+          p.lastGroundY = plat.y;
           if (plat.type === 'checkpoint') {
             const row = Math.round((GROUND_Y - plat.y) / ROW_H);
             if (!p.checkpoint || row > p.checkpoint.row) {
@@ -286,6 +340,23 @@ function update() {
       }
     }
 
+    // Flechas
+    if (now >= (p.invulnUntil || 0)) {
+      for (const a of arrows) {
+        if (now < a.fireAt || a.hit) continue;
+        if (Math.abs(a.x - p.x) < PLAYER_R + 6 && Math.abs(a.y - p.y) < PLAYER_R + 2) {
+          a.hit = true;
+          p.vx = a.dir * ARROW_KNOCK_VX;
+          p.vy = ARROW_KNOCK_VY;
+          p.grounded = false;
+          p.standingOn = null;
+          p.knock = ARROW_KNOCK_TICKS;
+          events.push({ k: 'arrow', id: p.id });
+          break;
+        }
+      }
+    }
+
     // Meta
     if (!p.finished && p.y - PLAYER_R <= level.finish.y + 6) {
       p.finished = true;
@@ -299,9 +370,10 @@ function update() {
       }
     }
 
-    // Caída por debajo del último checkpoint -> reaparece allí
-    if (!p.grounded && !p.finished && p.y - p.checkpoint.y > FALL_TRIGGER) {
-      if (respawnAtCheckpoint(p)) events.push({ k: 'fall', id: p.id });
+    // Caerse: quien cae más de fila y media por debajo de la última plataforma pisada queda eliminado
+    if (p.alive && !p.grounded && !p.finished && p.y - p.lastGroundY > FALL_LOSE) {
+      p.alive = false;
+      events.push({ k: 'fell', id: p.id, name: p.name });
     }
 
     // Lava: elimina a quien se queda atrás
@@ -310,6 +382,7 @@ function update() {
       events.push({ k: 'lava', id: p.id, name: p.name });
     }
   }
+  arrows = arrows.filter(a => !a.hit);
 
   // Plataformas "break" que ya han cumplido su temporizador
   for (const plat of level.platforms) {
@@ -352,6 +425,10 @@ function snapshot() {
       pct: p.finished ? 100 : (level ? Math.max(0, Math.min(100, Math.round((GROUND_Y - p.y) / (GROUND_Y - FINISH_Y) * 100))) : 0),
     })),
     brk: level ? level.platforms.filter(pl => pl.broken).map(pl => pl.id) : [],
+    // Flechas: [x, y, dir, disparada?, velocidad px/tick] — el cliente extrapola entre snapshots
+    ar: phase === 'playing'
+      ? arrows.map(a => [Math.round(a.x), Math.round(a.y), a.dir, now >= a.fireAt ? 1 : 0, ARROW_SPEED])
+      : [],
     mv: level
       ? level.platforms.filter(pl => pl.type === 'move').map(pl => [pl.id, Math.round(movingX(pl, elapsed))])
       : [],

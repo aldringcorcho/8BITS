@@ -24,6 +24,7 @@ let shakeUntil = 0;
 let muted = false;
 let lastListKey = '';
 let camY = 0;
+let myDeath = null;       // 'lava' | 'fell': para el mensaje al quedar eliminado
 
 // ------------------------------------------------------------
 //  Sonido 8 bits (WebAudio, sin archivos)
@@ -53,6 +54,7 @@ const sfx = {
   cp: () => [660, 880].forEach((f, i) => beep(f, 0.1, { delay: i * 0.07, vol: 0.07 })),
   crack: () => beep(140, 0.12, { type: 'sawtooth', vol: 0.06, slide: -80 }),
   fall: () => beep(300, 0.15, { type: 'triangle', vol: 0.06, slide: -200 }),
+  arrow: () => beep(900, 0.08, { type: 'sawtooth', vol: 0.05, slide: -600 }),
   lava: () => [440, 330, 220, 110].forEach((f, i) => beep(f, 0.12, { delay: i * 0.1, vol: 0.06 })),
   finish: () => [523, 659, 784, 1046].forEach((f, i) => beep(f, 0.14, { delay: i * 0.1, vol: 0.08 })),
   count: () => beep(523, 0.12),
@@ -176,6 +178,7 @@ function onState(s) {
 
   if (s.ph === 'countdown' && s.cd !== oldCd) sfx.count();
   if (s.ph === 'playing' && oldPhase === 'countdown') sfx.go();
+  if (s.ph === 'countdown') myDeath = null;
 
   for (const ev of s.e) handleEvent(ev);
   updateHud();
@@ -193,12 +196,21 @@ function handleEvent(ev) {
     if (p) burst(p.x, p.y, '#ff004d', 10);
     if (ev.id === myId) { sfx.fall(); shakeUntil = performance.now() + 200; }
   }
-  if (ev.k === 'fall' && ev.id === myId) sfx.fall();
+  if (ev.k === 'arrow') {
+    if (p) burst(p.x, p.y, '#c2c3c7', 8);
+    if (ev.id === myId) { sfx.arrow(); shakeUntil = performance.now() + 200; }
+  }
+  if (ev.k === 'fell') {
+    if (p) burst(p.x, p.y, '#83769c', 14, 2);
+    sfx.fall();
+    addFeedMsg(`${ev.name} se cayó`);
+    if (ev.id === myId) { myDeath = 'fell'; shakeUntil = performance.now() + 300; }
+  }
   if (ev.k === 'lava') {
     if (p) burst(p.x, p.y, '#ff004d', 20, 2.5);
     sfx.lava();
     addFeedMsg(`${ev.name} cayó en la lava`);
-    if (ev.id === myId) shakeUntil = performance.now() + 300;
+    if (ev.id === myId) { myDeath = 'lava'; shakeUntil = performance.now() + 300; }
   }
   if (ev.k === 'finish') {
     sfx.finish();
@@ -259,7 +271,7 @@ function updateSide() {
     const info = document.createElement('span');
     info.textContent = !playing ? 'LISTO'
       : !p.ig ? 'ESPERA'
-      : p.fin ? 'CIMA' : !p.al ? 'LAVA' : `${p.pct}%`;
+      : p.fin ? 'CIMA' : !p.al ? 'FUERA' : `${p.pct}%`;
     li.append(name, info);
     ul.appendChild(li);
   }
@@ -390,6 +402,34 @@ function drawPlatform(p, sy) {
   }
 }
 
+// Flecha pixel-art de 14 px apuntando en "dir"; antes de dispararse, un "!" parpadeante en el borde
+function drawArrows(now) {
+  if (!curr.ar) return;
+  const ticks = (now - currT) / (1000 / 30);
+  for (const [ax, ay, dir, fired, speed] of curr.ar) {
+    if (ay < camY - 20 || ay > camY + H + 20) continue;
+    if (!fired) {
+      if (Math.floor(now / 120) % 2) continue;
+      const ex = dir === 1 ? 6 : worldW - 6;
+      ctx.fillStyle = '#ff004d';
+      ctx.fillRect(ex - 4, ay - 6, 8, 12);
+      text('!', ex, ay, 8, '#fff1e8');
+      continue;
+    }
+    const x = Math.round(ax + dir * speed * ticks), y = Math.round(ay);
+    ctx.fillStyle = '#c2c3c7';                       // astil
+    ctx.fillRect(x - 7, y, 14, 1);
+    ctx.fillStyle = '#fff1e8';                       // punta
+    const tip = x + dir * 7;
+    ctx.fillRect(tip, y - 1, 1, 3);
+    ctx.fillRect(tip + dir, y, 1, 1);
+    ctx.fillStyle = '#ff004d';                       // plumas
+    const tail = x - dir * 7;
+    ctx.fillRect(tail, y - 2, 2, 1);
+    ctx.fillRect(tail, y + 2, 2, 1);
+  }
+}
+
 function lerpPlayers() {
   if (!curr) return [];
   if (!prev) return curr.p;
@@ -453,6 +493,9 @@ function render() {
     }
   }
 
+  // Flechas
+  drawArrows(now);
+
   // Partículas
   particles = particles.filter(pt => {
     pt.x += pt.vx; pt.y += pt.vy; pt.vx *= 0.92; pt.vy *= 0.92;
@@ -497,7 +540,8 @@ function drawOverlay(m) {
       text('ESPERANDO A QUE EMPIECE LA PARTIDA...', W / 2, 185, 8, '#00e436');
     }
     text('SALTA DE PLATAFORMA EN PLATAFORMA · ¡EL PRIMERO EN LLEGAR ARRIBA GANA!', W / 2, 230, 6, '#83769c');
-    text(`HASTA ${maxPlayers} JUGADORES · LA LAVA SUBE SI TE QUEDAS ATRÁS`, W / 2, 245, 6, '#83769c');
+    text(`HASTA ${maxPlayers} JUGADORES · LA LAVA SUBE · SI TE CAES, PIERDES`, W / 2, 245, 6, '#83769c');
+    text('¡CUIDADO CON LAS FLECHAS QUE SALEN DE LOS LADOS!', W / 2, 260, 6, '#83769c');
   } else if (ph === 'countdown') {
     dim();
     text(String(curr.cd), W / 2, H / 2 - 10, 48, '#ffec27');
@@ -508,7 +552,7 @@ function drawOverlay(m) {
     if (m && m.ig && m.fin) {
       text('¡HAS LLEGADO A LA CIMA!', W / 2, H / 2, 14, '#ffec27');
     } else if (m && m.ig && !m.al) {
-      text('TE HA ALCANZADO LA LAVA', W / 2, H / 2 - 10, 14, '#ff004d');
+      text(myDeath === 'fell' ? '¡TE HAS CAÍDO!' : 'TE HA ALCANZADO LA LAVA', W / 2, H / 2 - 10, 14, '#ff004d');
       text('MIRANDO LA PARTIDA...', W / 2, H / 2 + 20, 8, '#fff1e8');
     } else if (m && !m.ig) {
       text('PARTIDA EN CURSO - ENTRAS EN LA SIGUIENTE', W / 2, H - 14, 7, '#ffec27');
